@@ -1,0 +1,12 @@
+# Local development database only.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fourhub
+      POSTGRES_PASSWORD: change-me-locally
+      POSTGRES_DB: fourhub
+    ports: ["5432:5432"]
+    volumes: ["fourhub-data:/var/lib/postgresql/data"]
+volumes:
+  fourhub-data:

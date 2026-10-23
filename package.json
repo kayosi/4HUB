@@ -1,0 +1,32 @@
+{
+  "name": "4hub",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "4HUB - responsive web application for a trading community and premium trading-content platform",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web -c teal,blue \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
+    "build": "npm run build -w apps/api && npm run build -w apps/web",
+    "test": "npm run test -w apps/api && npm run test -w apps/web",
+    "lint": "eslint .",
+    "typecheck": "npm run typecheck -w apps/api && npm run typecheck -w apps/web",
+    "migrate": "npm run migrate -w apps/api",
+    "seed:admin": "npm run seed:admin -w apps/api",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^10.0.6",
+    "eslint": "^10.13.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "typescript-eslint": "^8.72.0"
+  }
+}
