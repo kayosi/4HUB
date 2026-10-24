@@ -55,7 +55,9 @@ describe('routing and guards', () => {
 
   it('renders the member dashboard empty state for a signed-in member', async () => {
     mockFetch((url) =>
-      url.endsWith('/me') ? { body: user('free') } : { body: { greeting: 'Ada', role: 'free', premium: false, items: [] } },
+      url.endsWith('/me') ? { body: user('free') }
+        : url.includes('/signals') ? { body: { signals: [], hasMore: false } }
+        : { body: { greeting: 'Ada', role: 'free', premium: false, items: [] } },
     );
     renderAt('/dashboard');
     expect(await screen.findByText(/nothing here yet/i)).toBeInTheDocument();
@@ -64,7 +66,7 @@ describe('routing and guards', () => {
   it('shows an error state with retry when the API fails', async () => {
     mockFetch((url) => (url.endsWith('/me') ? { body: user('free') } : { status: 500, body: { error: { code: 'INTERNAL', message: 'Boom' } } }));
     renderAt('/dashboard');
-    expect(await screen.findByRole('button', { name: /try again/i })).toBeInTheDocument();
+    expect((await screen.findAllByRole('button', { name: /try again/i })).length).toBeGreaterThan(0);
   });
 
   it('validates the login form before calling the API', async () => {

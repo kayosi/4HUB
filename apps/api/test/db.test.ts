@@ -7,7 +7,7 @@ describe('migrations', () => {
     const { db } = await makeApp(); // makeApp already migrated once
     expect(await migrate(db)).toEqual([]);
     const { rows } = await db.query('select name from schema_migrations');
-    expect(rows).toHaveLength(1);
+    expect(rows.map((r: { name: string }) => r.name)).toEqual(["001_init.sql", "002_profiles_and_signals.sql"]);
     await expect(db.query('select 1 from users')).resolves.toBeDefined();
   });
 });

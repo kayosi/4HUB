@@ -8,6 +8,10 @@ export interface User {
   displayName: string;
   role: Role;
   createdAt: string;
+  country: string | null;
+  tradingExperience: 'beginner' | 'intermediate' | 'advanced' | 'professional' | null;
+  preferredAssets: string[];
+  notificationPrefs: { newSignals: boolean; signalUpdates: boolean; announcements: boolean };
 }
 
 interface AuthValue {

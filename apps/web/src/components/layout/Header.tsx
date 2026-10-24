@@ -20,6 +20,7 @@ export function Header() {
           {open ? 'Close' : 'Menu'}
         </button>
         <nav id="main-nav" className="nav" data-open={open} aria-label="Main" onClick={close}>
+          <NavLink to="/signals">Signals</NavLink>
           <NavLink to="/pricing">Pricing</NavLink>
           {user ? (
             <>

@@ -26,7 +26,21 @@ const loginSchema = z.object({ email, password: z.string().min(1).max(128) });
 const resetRequestSchema = z.object({ email });
 const resetConfirmSchema = z.object({ token: z.string().min(20).max(200), password });
 
+/** What a member may see about THEMSELVES. */
 export const publicUser = (u: UserRow) => ({
+  id: u.id,
+  email: u.email,
+  displayName: u.display_name,
+  role: u.role,
+  createdAt: u.created_at,
+  country: u.country,
+  tradingExperience: u.trading_experience,
+  preferredAssets: u.preferred_assets,
+  notificationPrefs: u.notification_prefs,
+});
+
+/** Minimal view for the admin user list: no profile details beyond what administration needs. */
+export const adminUserView = (u: UserRow) => ({
   id: u.id,
   email: u.email,
   displayName: u.display_name,

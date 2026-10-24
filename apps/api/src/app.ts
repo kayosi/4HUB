@@ -12,15 +12,20 @@ import authPlugin from './plugins/auth.js';
 import authRoutes from './routes/auth.js';
 import meRoutes from './routes/me.js';
 import { adminRoutes, memberRoutes, moderationRoutes } from './routes/areas.js';
+import multipart from '@fastify/multipart';
+import { LocalDiskStorage, type FileStorage } from './storage/index.js';
+import signalRoutes, { commentRoutes } from './routes/signals.js';
+import adminSignalRoutes from './routes/adminSignals.js';
 import './types.js';
 
 export interface AppDeps {
   config: Config;
   db: Db;
   mailer?: Mailer;
+  storage?: FileStorage;
 }
 
-export async function buildApp({ config, db, mailer }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ config, db, mailer, storage }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
       level: config.LOG_LEVEL,
@@ -34,9 +39,12 @@ export async function buildApp({ config, db, mailer }: AppDeps): Promise<Fastify
   app.decorate('db', db);
   app.decorate('mailer', mailer ?? createLogMailer(app.log, config.NODE_ENV === 'production'));
 
+  app.decorate('storage', storage ?? new LocalDiskStorage(config.UPLOAD_DIR));
+
   await app.register(helmet);
   await app.register(cors, { origin: config.WEB_ORIGIN, credentials: true });
   await app.register(cookie);
+  await app.register(multipart, { limits: { fileSize: config.MAX_UPLOAD_MB * 1024 * 1024, files: 5, fields: 5, parts: 12 } });
   await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
 
   // CSRF defence in depth (alongside SameSite=Lax): browsers always send Origin on
@@ -62,7 +70,7 @@ export async function buildApp({ config, db, mailer }: AppDeps): Promise<Fastify
       req.log.error({ err }, 'Unhandled error');
       return reply.code(500).send({ error: { code: 'INTERNAL', message: 'Something went wrong' } });
     }
-    const code = status === 429 ? 'RATE_LIMITED' : 'BAD_REQUEST';
+    const code = status === 429 ? 'RATE_LIMITED' : status === 413 ? 'PAYLOAD_TOO_LARGE' : 'BAD_REQUEST';
     return reply.code(status).send({ error: { code, message: (err as Error).message } });
   });
   app.setNotFoundHandler((_req, reply) =>
@@ -76,7 +84,10 @@ export async function buildApp({ config, db, mailer }: AppDeps): Promise<Fastify
       await api.register(meRoutes, { prefix: '/me' });
       await api.register(memberRoutes, { prefix: '/member' });
       await api.register(moderationRoutes, { prefix: '/moderation' });
+      await api.register(signalRoutes, { prefix: '/signals' });
+      await api.register(commentRoutes, { prefix: '/comments' });
       await api.register(adminRoutes, { prefix: '/admin' });
+      await api.register(adminSignalRoutes, { prefix: '/admin/signals' });
       // Future modules (payments, bots, copy-trading, community) register here as new route plugins.
     },
     { prefix: '/api' },

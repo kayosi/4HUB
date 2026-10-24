@@ -15,8 +15,9 @@ export async function api<T = void>(path: string, opts: { method?: string; body?
     res = await fetch(`/api${path}`, {
       method: opts.method ?? 'GET',
       credentials: 'include',
-      headers: opts.body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      // FormData (image uploads) sets its own multipart boundary header.
+      headers: opts.body !== undefined && !(opts.body instanceof FormData) ? { 'Content-Type': 'application/json' } : undefined,
+      body: opts.body === undefined ? undefined : opts.body instanceof FormData ? opts.body : JSON.stringify(opts.body),
     });
   } catch {
     throw new ApiError(0, 'NETWORK', 'Unable to reach the server. Check your connection and try again.');

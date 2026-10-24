@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { Header } from './Header';
 import { Footer } from './Footer';
 import { useAuth } from '../../auth/AuthContext';
+import { Spinner } from '../ui';
 
 export function PublicLayout() {
   return (
@@ -25,12 +26,16 @@ export function DashboardLayout() {
         <nav className="sidenav" aria-label="Dashboard">
           <span className="sidenav-label">Member</span>
           <NavLink to="/dashboard" end>Overview</NavLink>
+          <NavLink to="/signals">Signals</NavLink>
+          <NavLink to="/saved">Saved</NavLink>
           <NavLink to="/profile">Profile</NavLink>
-          <NavLink to="/pricing">Upgrade</NavLink>
+          <NavLink to="/settings">Settings</NavLink>
+          {user?.role !== 'premium' && user?.role !== 'admin' && user?.role !== 'moderator' && <NavLink to="/pricing">Upgrade</NavLink>}
           {user?.role === 'admin' && (
             <>
               <span className="sidenav-label">Admin</span>
-              <NavLink to="/admin">Admin dashboard</NavLink>
+              <NavLink to="/admin" end>Admin dashboard</NavLink>
+              <NavLink to="/admin/signals/new">Post signal</NavLink>
             </>
           )}
         </nav>
@@ -38,4 +43,11 @@ export function DashboardLayout() {
       </div>
     </div>
   );
+}
+
+/** Signed-in members get the dashboard shell; visitors get the public shell. Same page either way. */
+export function AdaptiveLayout() {
+  const { user, loading } = useAuth();
+  if (loading) return <Spinner label="Loading" />;
+  return user ? <DashboardLayout /> : <PublicLayout />;
 }

@@ -11,9 +11,9 @@ interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const cls = (v: Variant, block?: boolean, small?: boolean) =>
   `btn btn-${v}${block ? ' btn-block' : ''}${small ? ' btn-sm' : ''}`;
 
-export function Button({ variant = 'primary', block, small, loading, children, disabled, ...rest }: BtnProps) {
+export function Button({ variant = 'primary', block, small, loading, children, disabled, className, ...rest }: BtnProps) {
   return (
-    <button className={cls(variant, block, small)} disabled={disabled || loading} aria-busy={loading || undefined} {...rest}>
+    <button {...rest} className={`${cls(variant, block, small)}${className ? ` ${className}` : ''}`} disabled={disabled || loading} aria-busy={loading || undefined}>
       {loading ? 'Please wait…' : children}
     </button>
   );

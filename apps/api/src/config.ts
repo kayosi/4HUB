@@ -9,6 +9,8 @@ const schema = z.object({
   SESSION_TTL_DAYS: z.coerce.number().int().positive().default(14),
   PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().positive().default(30),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  UPLOAD_DIR: z.string().default('.data/uploads'),
+  MAX_UPLOAD_MB: z.coerce.number().positive().max(20).default(5),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
 });
 

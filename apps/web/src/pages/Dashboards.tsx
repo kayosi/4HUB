@@ -1,10 +1,27 @@
+import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { api } from '../lib/api';
 import { useAsync } from '../lib/useAsync';
-import { Badge, ButtonLink, Card, Spinner } from '../components/ui';
+import { Alert, Badge, ButtonLink, Card, Spinner } from '../components/ui';
+import { SignalCard } from '../components/signals/parts';
+import type { Signal } from '../lib/signals';
 import { EmptyState, ErrorState } from '../components/ui/states';
 
 interface Overview { greeting: string; role: string; premium: boolean; items: unknown[] }
+
+function LatestSignals() {
+  const s = useAsync(() => api<{ signals: Signal[] }>('/signals?limit=3'));
+  return (
+    <section className="stack" aria-label="Latest signals">
+      <div className="row"><h2 style={{ margin: 0 }}>Latest signals</h2><ButtonLink to="/signals" variant="ghost" small>View all →</ButtonLink></div>
+      {s.status === 'loading' && <Spinner />}
+      {s.status === 'error' && <ErrorState message={s.error.message} onRetry={s.reload} />}
+      {s.status === 'ready' && (s.data.signals.length === 0
+        ? <EmptyState title="No signals yet" message="New signals will appear here." />
+        : <div className="feed">{s.data.signals.map((x) => <SignalCard key={x.id} signal={x} />)}</div>)}
+    </section>
+  );
+}
 
 export function MemberDashboard() {
   const { user } = useAuth();
@@ -36,6 +53,7 @@ export function MemberDashboard() {
           </Card>
         </div>
       )}
+      <LatestSignals />
     </div>
   );
 }
@@ -44,13 +62,21 @@ interface AdminOverview { usersByRole: Record<string, number> }
 interface AdminUsers { users: { id: string; email: string; displayName: string; role: string; createdAt: string }[] }
 
 export function AdminDashboard() {
+  const { user: me } = useAuth();
+  const [roleError, setRoleError] = useState<string>();
   const overview = useAsync(() => api<AdminOverview>('/admin/overview'));
   const users = useAsync(() => api<AdminUsers>('/admin/users?limit=25'));
+  const changeRole = async (id: string, role: string) => {
+    setRoleError(undefined);
+    try { await api(`/admin/users/${id}/role`, { method: 'PATCH', body: { role } }); users.reload(); overview.reload(); }
+    catch (e) { setRoleError(e instanceof Error ? e.message : 'Could not change role'); }
+  };
   return (
     <div className="stack">
       <div className="page-head">
         <h1>Admin dashboard</h1>
-        <p className="muted">Platform overview. Management tools arrive in later releases.</p>
+        <p className="muted">Platform overview.</p>
+        <ButtonLink to="/admin/signals/new">Post a signal</ButtonLink>
       </div>
       {overview.status === 'loading' && <Spinner />}
       {overview.status === 'error' && <ErrorState message={overview.error.message} onRetry={overview.reload} />}
@@ -62,6 +88,8 @@ export function AdminDashboard() {
         </div>
       )}
       <h2>Recent users</h2>
+      <p className="muted small">Until payments are added, promote members to premium here.</p>
+      {roleError && <Alert>{roleError}</Alert>}
       {users.status === 'loading' && <Spinner />}
       {users.status === 'error' && <ErrorState message={users.error.message} onRetry={users.reload} />}
       {users.status === 'ready' && (users.data.users.length === 0 ? (
@@ -73,7 +101,14 @@ export function AdminDashboard() {
             <tbody>
               {users.data.users.map((u) => (
                 <tr key={u.id}>
-                  <td>{u.displayName}</td><td>{u.email}</td><td><Badge>{u.role}</Badge></td>
+                  <td>{u.displayName}</td><td>{u.email}</td>
+                  <td>
+                    {u.id === me?.id ? <Badge>{u.role}</Badge> : (
+                      <select className="input" style={{ minHeight: 36, width: 'auto' }} aria-label={`Role for ${u.displayName}`} value={u.role} onChange={(e) => changeRole(u.id, e.target.value)}>
+                        {['free', 'premium', 'moderator', 'admin'].map((r) => <option key={r}>{r}</option>)}
+                      </select>
+                    )}
+                  </td>
                   <td>{new Date(u.createdAt).toLocaleDateString()}</td>
                 </tr>
               ))}

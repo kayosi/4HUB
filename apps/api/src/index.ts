@@ -1,4 +1,4 @@
-import { dirname, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import { loadConfig } from './config.js';
@@ -7,7 +7,9 @@ import { buildApp } from './app.js';
 
 dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '.env') });
 
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const config = loadConfig();
+if (!isAbsolute(config.UPLOAD_DIR)) config.UPLOAD_DIR = resolve(root, config.UPLOAD_DIR);
 const db = createPool(config.DATABASE_URL);
 const app = await buildApp({ config, db });
 

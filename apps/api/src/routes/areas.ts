@@ -1,8 +1,10 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { requireAuth, requireRole } from '../plugins/auth.js';
-import { countUsersByRole, listUsers } from '../db/repos.js';
-import { publicUser } from './auth.js';
+import { countUsersByRole, findUserById, listUsers, updateRole } from '../db/repos.js';
+import { adminUserView } from './auth.js';
+import { ROLES } from '../auth/roles.js';
+import { badRequest, notFound } from '../errors.js';
 import { hasPremiumAccess } from '../auth/roles.js';
 import { parse } from '../lib/validate.js';
 
@@ -42,6 +44,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       req.query,
     );
     const rows = await listUsers(app.db, q.limit, q.offset);
-    return { users: rows.map(publicUser), limit: q.limit, offset: q.offset };
+    return { users: rows.map(adminUserView), limit: q.limit, offset: q.offset };
+  });
+
+  // Until payments exist this is how a member is promoted to premium (or staff). Roles are re-read
+  // from the database on every request, so a change takes effect immediately.
+  app.patch('/users/:id/role', async (req) => {
+    const id = z.string().uuid().safeParse((req.params as { id: string }).id);
+    if (!id.success) throw notFound('User not found');
+    const { role } = parse(z.object({ role: z.enum(ROLES) }), req.body);
+    if (id.data === req.user!.id) throw badRequest('You cannot change your own role');
+    if (!(await findUserById(app.db, id.data))) throw notFound('User not found');
+    return { user: adminUserView((await updateRole(app.db, id.data, role))!) };
   });
 };

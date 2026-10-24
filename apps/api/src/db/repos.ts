@@ -2,18 +2,30 @@ import { randomUUID } from 'node:crypto';
 import type { Db } from './index.js';
 import type { Role } from '../auth/roles.js';
 
+export type TradingExperience = 'beginner' | 'intermediate' | 'advanced' | 'professional';
+export interface NotificationPrefs {
+  newSignals: boolean;
+  signalUpdates: boolean;
+  announcements: boolean;
+}
 export interface UserRow {
   id: string;
   email: string;
   display_name: string;
   role: Role;
   created_at: Date;
+  country: string | null;
+  trading_experience: TradingExperience | null;
+  preferred_assets: string[];
+  notification_prefs: NotificationPrefs;
 }
 export interface UserWithHash extends UserRow {
   password_hash: string;
 }
 
-const cols = 'id, email, display_name, role, created_at';
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = { newSignals: true, signalUpdates: true, announcements: false };
+
+const cols = 'id, email, display_name, role, created_at, country, trading_experience, preferred_assets, notification_prefs';
 type Q = Pick<Db, 'query'>;
 
 export async function createUser(
@@ -21,8 +33,9 @@ export async function createUser(
   input: { email: string; passwordHash: string; displayName: string; role?: Role },
 ): Promise<UserRow> {
   const { rows } = await db.query<UserRow>(
-    `insert into users (id, email, password_hash, display_name, role) values ($1,$2,$3,$4,$5) returning ${cols}`,
-    [randomUUID(), input.email, input.passwordHash, input.displayName, input.role ?? 'free'],
+    `insert into users (id, email, password_hash, display_name, role, preferred_assets, notification_prefs)
+     values ($1,$2,$3,$4,$5,$6,$7) returning ${cols}`,
+    [randomUUID(), input.email, input.passwordHash, input.displayName, input.role ?? 'free', '[]', JSON.stringify(DEFAULT_NOTIFICATION_PREFS)],
   );
   return rows[0]!;
 }
@@ -32,12 +45,50 @@ export async function findUserByEmail(db: Q, email: string): Promise<UserWithHas
   return rows[0];
 }
 
-export async function updateDisplayName(db: Q, id: string, displayName: string): Promise<UserRow | undefined> {
+export interface ProfilePatch {
+  displayName?: string;
+  country?: string | null;
+  tradingExperience?: TradingExperience | null;
+  preferredAssets?: string[];
+  notificationPrefs?: NotificationPrefs;
+}
+
+/** Updates only the provided profile fields (column names are fixed here, never user-supplied). */
+export async function updateProfile(db: Q, id: string, patch: ProfilePatch): Promise<UserRow | undefined> {
+  const sets: string[] = [];
+  const vals: unknown[] = [id];
+  const add = (col: string, v: unknown) => {
+    vals.push(v);
+    sets.push(`${col} = $${vals.length}`);
+  };
+  if (patch.displayName !== undefined) add('display_name', patch.displayName);
+  if (patch.country !== undefined) add('country', patch.country);
+  if (patch.tradingExperience !== undefined) add('trading_experience', patch.tradingExperience);
+  if (patch.preferredAssets !== undefined) add('preferred_assets', JSON.stringify(patch.preferredAssets));
+  if (patch.notificationPrefs !== undefined) add('notification_prefs', JSON.stringify(patch.notificationPrefs));
+  if (sets.length === 0) return findUserById(db, id);
   const { rows } = await db.query<UserRow>(
-    `update users set display_name = $2, updated_at = now() where id = $1 returning ${cols}`,
-    [id, displayName],
+    `update users set ${sets.join(', ')}, updated_at = now() where id = $1 returning ${cols}`,
+    vals,
   );
   return rows[0];
+}
+
+export async function findUserById(db: Q, id: string): Promise<UserWithHash | undefined> {
+  const { rows } = await db.query<UserWithHash>(`select ${cols}, password_hash from users where id = $1`, [id]);
+  return rows[0];
+}
+
+export async function updateRole(db: Q, id: string, role: Role): Promise<UserRow | undefined> {
+  const { rows } = await db.query<UserRow>(`update users set role = $2, updated_at = now() where id = $1 returning ${cols}`, [
+    id,
+    role,
+  ]);
+  return rows[0];
+}
+
+export async function deleteOtherSessions(db: Q, userId: string, keepTokenHash: string | null): Promise<void> {
+  await db.query('delete from sessions where user_id = $1 and token_hash <> $2', [userId, keepTokenHash ?? '']);
 }
 
 export async function updatePassword(db: Q, id: string, passwordHash: string): Promise<void> {
@@ -69,7 +120,8 @@ export async function createSession(db: Q, tokenHash: string, userId: string, ex
 
 export async function findUserBySession(db: Q, tokenHash: string): Promise<UserRow | undefined> {
   const { rows } = await db.query<UserRow>(
-    `select u.id, u.email, u.display_name, u.role, u.created_at
+    `select u.id, u.email, u.display_name, u.role, u.created_at, u.country, u.trading_experience,
+            u.preferred_assets, u.notification_prefs
        from sessions s join users u on u.id = s.user_id
       where s.token_hash = $1 and s.expires_at > now()`,
     [tokenHash],
