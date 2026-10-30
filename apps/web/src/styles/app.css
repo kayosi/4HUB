@@ -195,3 +195,33 @@ textarea.input { min-height: 120px; padding: var(--space-3); resize: vertical; l
 .sticky-submit { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--bg) 30%); padding: var(--space-4) 0 var(--space-2); }
 .check { display: flex; gap: var(--space-3); align-items: center; min-height: 44px; }
 .check input { width: 20px; height: 20px; accent-color: var(--accent); }
+
+/* Billing */
+.pricing-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); align-items: stretch; }
+.plan { display: flex; flex-direction: column; gap: var(--space-2); height: 100%; }
+.plan .checklist { flex: 1; }
+.plan-featured { outline: 1px solid var(--accent); outline-offset: 8px; border-radius: var(--radius); }
+.method { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); min-height: 48px; }
+.kv { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: var(--space-4) 0 0; }
+.kv dt { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.kv dd { margin: 2px 0 0; overflow-wrap: anywhere; }
+.receipt hr { border: 0; border-top: 1px solid var(--border); margin: var(--space-4) 0; }
+@media print {
+  body { background: #fff; color: #000; }
+  .site-header, .sidenav, .skip-link, .no-print, .site-footer { display: none !important; }
+  .card { border: 0; background: #fff; color: #000; }
+  .muted { color: #555; }
+}
+.plan-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-height: 56px; align-content: flex-start; }
+.plan-unit { margin: 0 0 var(--space-3); min-height: 2.6em; }
+
+/* Tables that become labelled stacked rows on small screens (no sideways scrolling for money data) */
+@media (max-width: 640px) {
+  table.stack { min-width: 0; }
+  table.stack thead { position: absolute; left: -9999px; }
+  table.stack tr { display: block; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+  table.stack tr:last-child { border-bottom: 0; }
+  table.stack td { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-4); border: 0; padding: 4px 0; text-align: right; overflow-wrap: anywhere; }
+  table.stack td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; text-align: left; flex-shrink: 0; }
+  table.stack td:empty { display: none; }
+}

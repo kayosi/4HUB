@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loginCookie, makeApp, seedUser } from './helpers.js';
-import type { Role } from '../src/auth/roles.js';
-
-const roles: Role[] = ['free', 'premium', 'moderator', 'admin'];
+import { makeApp, ROLES as roles, setup, type TestRole as Role } from './helpers.js';
 
 // url -> roles that may access it. Anyone else must get 403; visitors must get 401.
 const matrix: Record<string, Role[]> = {
@@ -22,10 +19,9 @@ describe('server-side authorization matrix', () => {
   });
 
   it('allows and denies each role exactly as specified', async () => {
-    const { app, db } = await makeApp();
-    for (const role of roles) await seedUser(db, role);
+    const { app, cookies } = await setup();
     for (const role of roles) {
-      const cookie = await loginCookie(app, `${role}@example.com`);
+      const cookie = cookies[role];
       for (const [url, allowed] of Object.entries(matrix)) {
         const res = await app.inject({ method: 'GET', url, headers: { cookie } });
         expect(res.statusCode, `${role} -> ${url}`).toBe(allowed.includes(role) ? 200 : 403);

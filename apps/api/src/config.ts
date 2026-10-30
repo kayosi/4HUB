@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
-const schema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+const schema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
   HOST: z.string().default('0.0.0.0'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
@@ -11,8 +12,27 @@ const schema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   UPLOAD_DIR: z.string().default('.data/uploads'),
   MAX_UPLOAD_MB: z.coerce.number().positive().max(20).default(5),
+  PAYMENT_PROVIDERS: z.string().default('').transform((v) => v.split(',').map((x) => x.trim()).filter(Boolean)),
+  /** Max checkout/verify attempts per minute per IP. */
+  BILLING_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+  SUBSCRIPTION_GRACE_DAYS: z.coerce.number().int().min(0).max(30).default(3),
+  /** Public URL of the web app (checkout return pages) and of this API (provider callbacks). */
+  WEB_PUBLIC_URL: z.string().url().default('http://localhost:5173'),
+  API_PUBLIC_URL: z.string().url().default('http://localhost:4000'),
+  MOCK_PROVIDER_SECRET: z.string().min(8).default('dev-only-sandbox-secret'),
+  MPESA_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
+  MPESA_CONSUMER_KEY: z.string().optional(),
+  MPESA_CONSUMER_SECRET: z.string().optional(),
+  MPESA_SHORTCODE: z.string().optional(),
+  MPESA_PASSKEY: z.string().optional(),
+  MPESA_CALLBACK_TOKEN: z.string().min(16).optional(),
+  PAYSTACK_SECRET_KEY: z.string().optional(),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
-});
+  })
+  .superRefine((c, ctx) => {
+    if (c.NODE_ENV === 'production' && c.PAYMENT_PROVIDERS.includes('mock'))
+      ctx.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDERS'], message: 'the sandbox provider "mock" is not allowed in production' });
+  });
 
 export type Config = z.infer<typeof schema>;
 

@@ -30,12 +30,15 @@ export function DashboardLayout() {
           <NavLink to="/saved">Saved</NavLink>
           <NavLink to="/profile">Profile</NavLink>
           <NavLink to="/settings">Settings</NavLink>
-          {user?.role !== 'premium' && user?.role !== 'admin' && user?.role !== 'moderator' && <NavLink to="/pricing">Upgrade</NavLink>}
+          <NavLink to="/billing">Billing</NavLink>
+          {!user?.access.premium && <NavLink to="/pricing">Upgrade</NavLink>}
           {user?.role === 'admin' && (
             <>
               <span className="sidenav-label">Admin</span>
               <NavLink to="/admin" end>Admin dashboard</NavLink>
               <NavLink to="/admin/signals/new">Post signal</NavLink>
+              <NavLink to="/admin/billing">Revenue &amp; billing</NavLink>
+              <NavLink to="/admin/plans">Plans</NavLink>
             </>
           )}
         </nav>

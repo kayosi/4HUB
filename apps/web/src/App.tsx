@@ -12,13 +12,18 @@ import SignalDetail from './pages/SignalDetail';
 import Saved from './pages/Saved';
 import Settings from './pages/Settings';
 import { AdminSignalEdit, AdminSignalNew } from './pages/AdminSignals';
+import Checkout from './pages/Checkout';
+import PaymentStatus from './pages/PaymentStatus';
+import Billing from './pages/Billing';
+import Receipt from './pages/Receipt';
+import AdminBilling from './pages/AdminBilling';
+import AdminPlans from './pages/AdminPlans';
 
 export default function App() {
   return (
     <Routes>
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Landing />} />
-        <Route path="/pricing" element={<Pricing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -26,11 +31,18 @@ export default function App() {
         <Route path="*" element={<NotFoundState />} />
       </Route>
       <Route element={<AdaptiveLayout />}>
+        <Route path="/pricing" element={<Pricing />} />
         <Route path="/signals" element={<Signals />} />
         <Route path="/signals/:id" element={<SignalDetail />} />
       </Route>
       <Route element={<RequireAuth><DashboardLayout /></RequireAuth>}>
         <Route path="/saved" element={<Saved />} />
+        <Route path="/checkout/:planCode" element={<Checkout />} />
+        <Route path="/billing" element={<Billing />} />
+        <Route path="/billing/payments/:id" element={<PaymentStatus />} />
+        <Route path="/billing/invoices/:id" element={<Receipt />} />
+        <Route path="/admin/billing" element={<RequireRole roles={['admin']}><AdminBilling /></RequireRole>} />
+        <Route path="/admin/plans" element={<RequireRole roles={['admin']}><AdminPlans /></RequireRole>} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/admin/signals/new" element={<RequireRole roles={['admin']}><AdminSignalNew /></RequireRole>} />
         <Route path="/admin/signals/:id/edit" element={<RequireRole roles={['admin']}><AdminSignalEdit /></RequireRole>} />

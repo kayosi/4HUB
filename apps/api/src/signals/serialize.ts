@@ -1,11 +1,10 @@
-import type { UserRow } from '../db/repos.js';
-import { hasPremiumAccess } from '../auth/roles.js';
+import { can, type AuthUser } from '../auth/access.js';
 import type { ImageRow, SignalRow, UpdateRow } from './model.js';
 import type { Stats, Viewer } from './repo.js';
 
 /** The single authorization rule for signal content. Every route that returns signal data goes through this. */
-export function canViewFull(signal: Pick<SignalRow, 'visibility'>, user: UserRow | null): boolean {
-  return signal.visibility === 'free' || (user !== null && hasPremiumAccess(user.role));
+export function canViewFull(signal: Pick<SignalRow, 'visibility'>, user: AuthUser | null): boolean {
+  return signal.visibility === 'free' || can(user, 'premium_signals');
 }
 
 export const imageUrl = (signalId: string, imageId: string) => `/api/signals/${signalId}/images/${imageId}`;
@@ -19,7 +18,7 @@ const DEFAULT_TEASER = 'Premium signal. Upgrade to see the full setup and analys
  */
 export function serializeSignal(
   s: SignalRow,
-  opts: { user: UserRow | null; images?: ImageRow[]; stats?: Stats; viewer?: Viewer },
+  opts: { user: AuthUser | null; images?: ImageRow[]; stats?: Stats; viewer?: Viewer },
 ) {
   const base = {
     id: s.id,

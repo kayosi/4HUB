@@ -107,6 +107,8 @@ describe('admin user management', () => {
     expect((await get(ctx, '/api/admin/overview', ctx.cookies.free)).statusCode).toBe(403); // moderator is not admin
     expect((await get(ctx, '/api/moderation/overview', ctx.cookies.free)).statusCode).toBe(200);
     expect((await send(ctx, 'PATCH', url(ctx.users.free.id), ctx.cookies.admin, { role: 'superuser' })).statusCode).toBe(400);
+    // premium is a subscription, not a role: it can no longer be assigned directly
+    expect((await send(ctx, 'PATCH', url(ctx.users.free.id), ctx.cookies.admin, { role: 'premium' })).statusCode).toBe(400);
     expect((await send(ctx, 'PATCH', url(ctx.users.admin.id), ctx.cookies.admin, { role: 'free' })).statusCode).toBe(400);
     expect((await send(ctx, 'PATCH', url('00000000-0000-4000-8000-000000000000'), ctx.cookies.admin, { role: 'free' })).statusCode).toBe(404);
     expect((await send(ctx, 'PATCH', url('nope'), ctx.cookies.admin, { role: 'free' })).statusCode).toBe(404);
@@ -120,11 +122,11 @@ describe('admin user management', () => {
     expect(res.json().users[0]).not.toHaveProperty('country');
   });
 
-  it('end-to-end: a promoted member can open a premium signal', async () => {
+  it('end-to-end: a member granted a subscription can open a premium signal', async () => {
     const ctx = await setup();
     const sig = await createSignal(ctx);
     expect((await get(ctx, `/api/signals/${sig.id}`, ctx.cookies.free)).json().signal.locked).toBe(true);
-    await send(ctx, 'PATCH', `/api/admin/users/${ctx.users.free.id}/role`, ctx.cookies.admin, { role: 'premium' });
+    await send(ctx, 'POST', `/api/admin/users/${ctx.users.free.id}/subscription/grant`, ctx.cookies.admin, { planCode: 'premium_monthly', reason: 'test' });
     expect((await get(ctx, `/api/signals/${sig.id}`, ctx.cookies.free)).json().signal.locked).toBe(false);
   });
 });

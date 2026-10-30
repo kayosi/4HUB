@@ -64,12 +64,12 @@ describe('premium signal teasers (server-side protection)', () => {
     for (const leak of LEAKS) expect(after.body).not.toContain(leak);
   });
 
-  it('role changes take effect on the very next request', async () => {
+  it('a subscription grant takes effect on the very next request', async () => {
     const ctx = await setup();
     const sig = await createSignal(ctx);
     expect((await get(ctx, `/api/signals/${sig.id}`, ctx.cookies.free)).json().signal.locked).toBe(true);
-    const r = await send(ctx, 'PATCH', `/api/admin/users/${ctx.users.free.id}/role`, ctx.cookies.admin, { role: 'premium' });
-    expect(r.statusCode).toBe(200);
+    const r = await send(ctx, 'POST', `/api/admin/users/${ctx.users.free.id}/subscription/grant`, ctx.cookies.admin, { planCode: 'premium_monthly', reason: 'test' });
+    expect(r.statusCode).toBe(204);
     expect((await get(ctx, `/api/signals/${sig.id}`, ctx.cookies.free)).json().signal.locked).toBe(false);
   });
 });

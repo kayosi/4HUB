@@ -16,6 +16,8 @@ import {
 } from '../db/repos.js';
 import { withTransaction } from '../db/index.js';
 import { AppError, conflict } from '../errors.js';
+import { can } from '../auth/access.js';
+import type { Entitlement } from '../billing/subscriptions.js';
 import { parse } from '../lib/validate.js';
 
 const email = z.string().trim().toLowerCase().email().max(254);
@@ -27,7 +29,7 @@ const resetRequestSchema = z.object({ email });
 const resetConfirmSchema = z.object({ token: z.string().min(20).max(200), password });
 
 /** What a member may see about THEMSELVES. */
-export const publicUser = (u: UserRow) => ({
+export const publicUser = (u: UserRow, entitlement: Entitlement) => ({
   id: u.id,
   email: u.email,
   displayName: u.display_name,
@@ -37,6 +39,7 @@ export const publicUser = (u: UserRow) => ({
   tradingExperience: u.trading_experience,
   preferredAssets: u.preferred_assets,
   notificationPrefs: u.notification_prefs,
+  access: { tier: entitlement.tier, premium: can({ role: u.role, entitlement }, 'premium_signals') },
 });
 
 /** Minimal view for the admin user list: no profile details beyond what administration needs. */
@@ -75,7 +78,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
       passwordHash: await hashPassword(body.password),
     });
     await startSession(reply, user.id);
-    return reply.code(201).send({ user: publicUser(user) });
+    return reply.code(201).send({ user: publicUser(user, await app.billing.entitlementFor(user.id)) });
   });
 
   app.post('/login', limit, async (req, reply) => {
@@ -84,7 +87,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
     const ok = await verifyPassword(found?.password_hash ?? (await dummyHash()), body.password);
     if (!found || !ok) throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
     await startSession(reply, found.id);
-    return { user: publicUser(found) };
+    return { user: publicUser(found, await app.billing.entitlementFor(found.id)) };
   });
 
   app.post('/logout', { preHandler: requireAuth }, async (req, reply) => {

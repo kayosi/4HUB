@@ -3,6 +3,7 @@ import { requireAuth } from '../plugins/auth.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { parse } from '../lib/validate.js';
 import { isStaff } from '../auth/roles.js';
+import type { AuthUser } from '../auth/access.js';
 import {
   addBookmark, addComment, clearReaction, getComment, getSignal, getImage, listAssets, listComments,
   listSignals, loadStats, removeBookmark, setReaction, softDeleteComment,
@@ -28,7 +29,7 @@ const signalRoutes: FastifyPluginAsync = async (app) => {
     return s;
   }
   /** Loads a signal and requires the caller to be allowed to see its full content. */
-  async function loadAuthorized(req: { user: Parameters<typeof canViewFull>[1] }, id: unknown) {
+  async function loadAuthorized(req: { user: AuthUser | null }, id: unknown) {
     const s = await load(id);
     if (!canViewFull(s, req.user)) throw premiumRequired();
     return s;

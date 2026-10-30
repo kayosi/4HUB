@@ -144,7 +144,7 @@ describe('bookmarks', () => {
     const ctx = await setup();
     const prem = await createSignal(ctx, { visibility: 'premium' });
     await send(ctx, 'PUT', `/api/signals/${prem.id}/bookmark`, ctx.cookies.premium);
-    await send(ctx, 'PATCH', `/api/admin/users/${ctx.users.premium.id}/role`, ctx.cookies.admin, { role: 'free' });
+    await send(ctx, 'POST', `/api/admin/users/${ctx.users.premium.id}/subscription/revoke`, ctx.cookies.admin, { reason: 'test lapse' });
     const res = await get(ctx, '/api/me/bookmarks', ctx.cookies.premium);
     expect(res.json().signals[0]).toMatchObject({ locked: true });
     expect(res.body).not.toContain('SECRET-ANALYSIS');

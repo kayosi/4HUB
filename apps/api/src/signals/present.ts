@@ -1,11 +1,11 @@
 import type { Db } from '../db/index.js';
-import type { UserRow } from '../db/repos.js';
+import type { AuthUser } from '../auth/access.js';
 import type { SignalRow } from './model.js';
 import { listImages, listImagesForSignals, listUpdates, loadStats, loadViewer, recordView } from './repo.js';
 import { canViewFull, serializeSignal, serializeUpdate } from './serialize.js';
 
 /** Serializes a page of signals using batched lookups. Locked signals never trigger premium lookups. */
-export async function presentList(db: Db, rows: SignalRow[], user: UserRow | null) {
+export async function presentList(db: Db, rows: SignalRow[], user: AuthUser | null) {
   const openIds = rows.filter((r) => canViewFull(r, user)).map((r) => r.id);
   const [images, stats, viewer] = await Promise.all([
     listImagesForSignals(db, openIds),
@@ -18,7 +18,7 @@ export async function presentList(db: Db, rows: SignalRow[], user: UserRow | nul
 }
 
 /** Detail view: adds the update history (authorized only) and counts one view per signed-in member. */
-export async function presentDetail(db: Db, row: SignalRow, user: UserRow | null, opts: { countView: boolean }) {
+export async function presentDetail(db: Db, row: SignalRow, user: AuthUser | null, opts: { countView: boolean }) {
   if (!canViewFull(row, user)) return { signal: serializeSignal(row, { user }), updates: null };
   if (opts.countView && user) await recordView(db, row.id, user.id);
   const [images, stats, viewer, updates] = await Promise.all([

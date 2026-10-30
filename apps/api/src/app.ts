@@ -16,6 +16,13 @@ import multipart from '@fastify/multipart';
 import { LocalDiskStorage, type FileStorage } from './storage/index.js';
 import signalRoutes, { commentRoutes } from './routes/signals.js';
 import adminSignalRoutes from './routes/adminSignals.js';
+import { BillingService } from './billing/service.js';
+import { createRegistry, type ProviderRegistry } from './billing/providers/registry.js';
+import type { FetchLike } from './billing/providers/types.js';
+import billingRoutes from './routes/billing.js';
+import webhookRoutes from './routes/webhooks.js';
+import sandboxRoutes from './routes/sandbox.js';
+import adminBillingRoutes from './routes/adminBilling.js';
 import './types.js';
 
 export interface AppDeps {
@@ -23,13 +30,17 @@ export interface AppDeps {
   db: Db;
   mailer?: Mailer;
   storage?: FileStorage;
+  clock?: () => Date;
+  /** Override for tests; defaults to the providers named in PAYMENT_PROVIDERS. */
+  providers?: ProviderRegistry;
+  http?: FetchLike;
 }
 
-export async function buildApp({ config, db, mailer, storage }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ config, db, mailer, storage, clock, providers, http }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
       level: config.LOG_LEVEL,
-      redact: ['req.headers.cookie', 'req.headers.authorization', 'res.headers["set-cookie"]', '*.password'],
+      redact: ['req.headers.cookie', 'req.headers.authorization', 'req.headers["x-paystack-signature"]', 'req.headers["x-mock-signature"]', 'res.headers["set-cookie"]', '*.password', '*.phoneNumber', 'req.query.token'],
     },
     trustProxy: config.NODE_ENV === 'production',
     bodyLimit: 100_000,
@@ -39,6 +50,12 @@ export async function buildApp({ config, db, mailer, storage }: AppDeps): Promis
   app.decorate('db', db);
   app.decorate('mailer', mailer ?? createLogMailer(app.log, config.NODE_ENV === 'production'));
 
+  const now = clock ?? (() => new Date());
+  app.decorate('now', now);
+  const registry = providers ?? createRegistry(config, (http ?? (fetch as unknown as FetchLike)), now);
+  app.decorate('billing', new BillingService(db, registry, {
+    graceDays: config.SUBSCRIPTION_GRACE_DAYS, webPublicUrl: config.WEB_PUBLIC_URL, apiPublicUrl: config.API_PUBLIC_URL,
+  }, now, app.log));
   app.decorate('storage', storage ?? new LocalDiskStorage(config.UPLOAD_DIR));
 
   await app.register(helmet);
@@ -86,7 +103,12 @@ export async function buildApp({ config, db, mailer, storage }: AppDeps): Promis
       await api.register(moderationRoutes, { prefix: '/moderation' });
       await api.register(signalRoutes, { prefix: '/signals' });
       await api.register(commentRoutes, { prefix: '/comments' });
+      await api.register(billingRoutes, { prefix: '/billing' });
+      await api.register(webhookRoutes, { prefix: '/webhooks/payments' });
+      // The sandbox "provider" exists only outside production and only when explicitly enabled.
+      if (config.NODE_ENV !== 'production' && registry.get('mock')) await api.register(sandboxRoutes, { prefix: '/billing/sandbox' });
       await api.register(adminRoutes, { prefix: '/admin' });
+      await api.register(adminBillingRoutes, { prefix: '/admin' });
       await api.register(adminSignalRoutes, { prefix: '/admin/signals' });
       // Future modules (payments, bots, copy-trading, community) register here as new route plugins.
     },

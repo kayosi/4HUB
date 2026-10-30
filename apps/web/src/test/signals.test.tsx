@@ -15,7 +15,12 @@ const full: FullSignal = {
   tpLevel: null, pips: null, analysis: 'Bounce off support', images: [{ id: 'i1', url: '/api/signals/s1/images/i1' }],
   stats: { reactions: { like: 2, fire: 1, target: 0 }, comments: 3, views: 10 }, viewer: { reaction: null, bookmarked: false },
 };
-const me = (role: string) => ({ user: { id: 'u1', email: 'a@b.co', displayName: 'Ada', role, createdAt: '2026-01-01', country: null, tradingExperience: null, preferredAssets: [], notificationPrefs: { newSignals: true, signalUpdates: true, announcements: false } } });
+/** Mirrors the API: "premium" is a free-role account whose subscription gives it access. */
+const me = (kind: string) => ({ user: {
+  id: 'u1', email: 'a@b.co', displayName: 'Ada', role: kind === 'premium' ? 'free' : kind, createdAt: '2026-01-01', country: null, tradingExperience: null,
+  preferredAssets: [], notificationPrefs: { newSignals: true, signalUpdates: true, announcements: false },
+  access: { tier: kind === 'premium' ? 'premium' : 'free', premium: kind !== 'free' },
+} });
 
 type Handler = (url: string, init?: RequestInit) => { status?: number; body?: unknown };
 function mockFetch(handler: Handler) {

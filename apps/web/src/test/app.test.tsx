@@ -14,7 +14,7 @@ function mockFetch(handler: Handler) {
     return { ok: status < 400, status, json: async () => body } as Response;
   }));
 }
-const user = (role: string) => ({ user: { id: '1', email: 'a@b.co', displayName: 'Ada', role, createdAt: '2026-01-01' } });
+const user = (role: string) => ({ user: { id: '1', email: 'a@b.co', displayName: 'Ada', role, createdAt: '2026-01-01', access: { tier: 'free', premium: role === 'admin' } } });
 const renderAt = (path: string) =>
   render(<MemoryRouter initialEntries={[path]}><AuthProvider><App /></AuthProvider></MemoryRouter>);
 

@@ -12,6 +12,8 @@ export interface User {
   tradingExperience: 'beginner' | 'intermediate' | 'advanced' | 'professional' | null;
   preferredAssets: string[];
   notificationPrefs: { newSignals: boolean; signalUpdates: boolean; announcements: boolean };
+  /** Resolved by the server from the subscription; the UI only uses it to decide what to show. */
+  access: { tier: string; premium: boolean };
 }
 
 interface AuthValue {
@@ -21,6 +23,8 @@ interface AuthValue {
   register: (displayName: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   setUser: (u: User) => void;
+  /** Re-reads the account from the server (e.g. after a payment, so premium access shows up without a page reload). */
+  refresh: () => Promise<void>;
 }
 
 const Ctx = createContext<AuthValue | null>(null);
@@ -49,7 +53,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
-  const value = useMemo(() => ({ user, loading, login, register, logout, setUser }), [user, loading, login, register, logout]);
+  const refresh = useCallback(async () => {
+    try { setUser((await api<{ user: User }>('/me')).user); } catch { /* keep the current view; the next request will surface real problems */ }
+  }, []);
+
+  const value = useMemo(() => ({ user, loading, login, register, logout, setUser, refresh }), [user, loading, login, register, logout, refresh]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

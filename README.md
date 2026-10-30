@@ -58,6 +58,39 @@ apps/web/src
 - Premium comments, reactions and bookmarks require premium access server-side too.
 - The API and web app must share an origin in production (reverse proxy) so image requests carry the session cookie.
 
+## Billing & subscriptions
+**Plans** (`plans` table, admin-editable at `/admin/plans`): name, price (integer minor units), currency, duration, features,
+active flag. A plan's `tier` maps to capabilities in `apps/api/src/billing/tiers.ts`; adding VIP or Copy Trading means a new
+registry entry plus plans, with no change to checkout, webhooks or subscription logic.
+
+**One authorization rule.** *Premium is not a role.* `can(user, capability)` in `auth/access.ts` is the only place that decides
+who may see paid content; signal serialization, images, comments, reactions, bookmarks and route guards all use it. Access is
+*derived* from subscription dates at request time (`billing/subscriptions.ts`), so it lapses exactly on schedule with no cron job.
+A test fails the build if premium logic is duplicated elsewhere.
+
+**Subscription states** (derived): `active` -> `grace` (renewal overdue, access kept for `SUBSCRIPTION_GRACE_DAYS`) -> `expired`;
+`cancelled` = access ended by a refund or an admin. Members who cancel keep access to the period end with no grace.
+Purchases stack: renewing early adds time to the end of the current period. A full refund takes back the period it bought.
+
+**Payment flow.** Checkout (server prices from the DB, ignores/rejects any client price) -> provider initiation -> *pending*
+payment -> signed webhook -> **server-to-server verification with the provider** -> amount/currency must match the checkout
+snapshot -> one transaction marks the payment paid, adds subscription time, issues the invoice. The browser only ever *reads*
+status; nothing the frontend says can grant access.
+
+**Webhook safety.** Signature/secret checked against the raw body; `(provider, event_id)` is unique (redelivery is a no-op);
+`payment_id` is unique on the period ledger (a payment can grant time once even if confirmed by different events); status
+changes are guarded transitions; failures never undo successes; every money/access change is written to `audit_log`.
+
+**Providers** implement one interface (`billing/providers/types.ts`): `mpesa` (Daraja STK push), `card` (Paystack hosted
+checkout; card data never touches 4HUB), `mock` (sandbox, dev/test only). See `.env.example`.
+
+### Before going live
+1. Exercise the M-Pesa and Paystack adapters against their **sandboxes** with real credentials; they are covered by contract tests
+   against recorded request/response shapes, not yet by live calls.
+2. Use https `API_PUBLIC_URL` so providers can reach `/api/webhooks/payments/<provider>`; set `PAYMENT_PROVIDERS` without `mock`.
+3. Keep `MPESA_CALLBACK_TOKEN` and `PAYSTACK_SECRET_KEY` in a secret manager. Review KES prices in `/admin/plans`.
+4. Run PostgreSQL 13+ (migration 003 uses `gen_random_uuid()`).
+
 ## Security model
 - Sessions: random 256-bit token in an `httpOnly`, `SameSite=Lax` (`Secure` in production) cookie; only its SHA-256 hash is stored.
 - Authorization is enforced **server-side** (`requireRole`); frontend guards are UX only.

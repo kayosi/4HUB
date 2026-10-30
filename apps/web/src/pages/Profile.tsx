@@ -47,7 +47,7 @@ export default function Profile() {
       <div className="page-head"><h1>Profile</h1></div>
       <Card title="Account">
         <p><span className="muted">Email:</span> {user.email}</p>
-        <p><span className="muted">Plan:</span> <Badge accent>{user.role}</Badge></p>
+        <p><span className="muted">Plan:</span> <Badge accent>{user.access.premium ? 'Premium' : 'Free'}</Badge></p>
         <p style={{ marginBottom: 0 }}><span className="muted">Member since:</span> {new Date(user.createdAt).toLocaleDateString()}</p>
       </Card>
       <Card title="Your details">
