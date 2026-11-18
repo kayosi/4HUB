@@ -30,6 +30,8 @@ export const serializeRoomSummary = (r: RoomRow, viewer: Viewer): RoomSummary =>
 export const serializeRoomDetail = (r: RoomRow, viewer: Viewer) => ({
   ...serializeRoomSummary(r, viewer),
   guidelines: r.guidelines,
+  /** Only staff can ever load an archived room, so this reveals nothing to members; it lets the chat show a read-only notice. */
+  archived: r.archived_at !== null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });

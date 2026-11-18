@@ -28,6 +28,12 @@ const schema = z
   MPESA_CALLBACK_TOKEN: z.string().min(16).optional(),
   PAYSTACK_SECRET_KEY: z.string().optional(),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+  /** Community chat: sends, edits and deletes per user per minute. */
+  CHAT_WRITES_PER_MINUTE: z.coerce.number().int().positive().default(20),
+  /** Concurrent live-update streams (browser tabs) per user. */
+  CHAT_MAX_STREAMS_PER_USER: z.coerce.number().int().positive().default(5),
+  /** How often an open stream re-checks the viewer's session and room access, and sends a keep-alive. */
+  CHAT_STREAM_RECHECK_MS: z.coerce.number().int().min(50).default(20_000),
   })
   .superRefine((c, ctx) => {
     if (c.NODE_ENV === 'production' && c.PAYMENT_PROVIDERS.includes('mock'))

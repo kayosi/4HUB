@@ -8,8 +8,8 @@ Read this file completely before starting any implementation task. Repository: h
 trading-content platform. It is NOT a native app and NOT a PWA. One codebase; no separate mobile projects.
 
 Delivered so far: foundation (auth, roles, design system) · signals (core product) · billing and subscriptions ·
-community rooms (Prompt 4A). Not built yet (do not start unprompted): messaging/chat, notifications, moderation
-workflows, courses, bots, copy trading.
+community rooms (Prompt 4A) · community messaging (Prompt 4B). Not built yet (do not start unprompted): notifications,
+moderation workflows, courses, bots, copy trading.
 
 ## 2. Architecture and stack
 npm workspaces monorepo.
@@ -21,14 +21,14 @@ npm workspaces monorepo.
 
 API layout (`apps/api/src`): `app.ts` (factory, registers route plugins under `/api`), `config.ts`, `db/` (pool,
 `withTransaction`, migration runner, user repos), `auth/` (`roles.ts`, `access.ts`), `plugins/auth.ts`
-(`requireAuth`, `requireRole`, `requireCapability`), `routes/`, domain folders (`signals/`, `billing/`, `rooms/`),
+(`requireAuth`, `requireRole`, `requireCapability`), `routes/`, domain folders (`signals/`, `billing/`, `rooms/`, `chat/`),
 `errors.ts` (`AppError`, `badRequest`, `forbidden`, `notFound`, `conflict`), `lib/validate.ts` (`parse`).
 
 A new module = route plugin in `routes/` + registration in `app.ts` + SQL migration + web pages + tests.
 
 ## 3. Database and migrations
 - Plain SQL files in `apps/api/migrations`, applied in filename order, each in a transaction; **never edit an applied
-  migration**, add the next number (`NNN_name.sql`). Current: 001 init, 002 profiles+signals, 003 billing, 004 community rooms.
+  migration**, add the next number (`NNN_name.sql`). Current: 001 init, 002 profiles+signals, 003 billing, 004 community rooms, 005 room messages.
 - Conventions: `uuid` primary keys generated in application code (`randomUUID()`), `timestamptz` timestamps,
   `check` constraints for enums, money as integer minor units.
 - Keep SQL compatible with both PostgreSQL 13+ and `pg-mem` (tests): avoid regex or string-function (`length`, `char_length`) check constraints and partial indexes; enforce lengths in Zod.
@@ -89,3 +89,16 @@ End each task with exactly ONE professional one-line commit message and stop; do
 - Staff (moderator + admin) manage rooms under `/api/staff/rooms`; members use `/api/rooms`. Management actions are audited
   (`room.created`, `room.updated`, `room.archived`, `room.restored`).
 - Out of scope until requested: messages/chat, notifications, moderation workflows, room membership.
+
+### Community messaging (Prompt 4B)
+- Table `room_messages` (migration 005): `seq` is a global increasing cursor used for pagination (`before`), deletes are soft
+  (content wiped, tombstone kept), `client_id` makes retried sends idempotent.
+- Authorization: `authorizeRoom()` in `routes/messages.ts` is the single check for all chat endpoints; it reuses `canEnterRoom`
+  (rooms/serialize.ts), which defers to `can()`. Never add a second access rule for chat. Messaging requires a signed-in user.
+- Permissions: only the author edits; the author or staff (moderator/admin) deletes; staff deletes of others are audited.
+- Real time = Server-Sent Events (`GET /api/rooms/:slug/stream`) fed by the in-process `ChatHub`. Single API instance only
+  (see README to scale). Use Fastify's `preClose` hook (not `onClose`) to end open streams on shutdown.
+- Message text is plain text: sanitised on write (`chat/sanitize.ts`), never HTML-escaped on the server, and rendered only as a React
+  text node. Never use `dangerouslySetInnerHTML` or auto-link message content.
+- Rate limits are in-memory per user (`chat/limiter.ts`, injected clock); configurable via `CHAT_*` env vars in `config.ts`.
+- Out of scope until requested: notifications, reports/mutes/bans, attachments, reactions, typing indicators, read receipts.

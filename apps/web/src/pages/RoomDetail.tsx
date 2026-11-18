@@ -4,6 +4,7 @@ import { useAsync } from '../lib/useAsync';
 import { useAuth } from '../auth/AuthContext';
 import { categoryLabel, lockedRoomFrom, type RoomDetail as Room } from '../lib/rooms';
 import { Badge, ButtonLink, Card, Spinner } from '../components/ui';
+import RoomChat from '../components/chat/RoomChat';
 import { ErrorState, NotFoundState } from '../components/ui/states';
 
 export default function RoomDetail() {
@@ -58,9 +59,17 @@ export default function RoomDetail() {
       <Card title="Room guidelines">
         {room.guidelines ? <p className="analysis">{room.guidelines}</p> : <p className="muted">No guidelines have been set for this room yet.</p>}
       </Card>
-      <Card title="Conversation">
-        <p className="muted">Discussion in this room is coming soon. You will be able to chat with other members here.</p>
-      </Card>
+      {user
+        ? <RoomChat key={room.slug} slug={room.slug} archived={room.archived} />
+        : (
+          <Card title="Conversation">
+            <p className="muted">Log in to read and join the conversation in this room.</p>
+            <div className="row">
+              <Link className="btn btn-primary" to="/login" state={{ from: location.pathname }}>Log in</Link>
+              <ButtonLink to="/register" variant="secondary">Create account</ButtonLink>
+            </div>
+          </Card>
+        )}
     </div>
   );
 }

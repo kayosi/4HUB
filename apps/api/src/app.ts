@@ -24,6 +24,9 @@ import webhookRoutes from './routes/webhooks.js';
 import sandboxRoutes from './routes/sandbox.js';
 import adminBillingRoutes from './routes/adminBilling.js';
 import roomRoutes, { staffRoomRoutes } from './routes/rooms.js';
+import messageRoutes from './routes/messages.js';
+import { ChatHub } from './chat/hub.js';
+import { WriteLimiter } from './chat/limiter.js';
 import './types.js';
 
 export interface AppDeps {
@@ -58,6 +61,10 @@ export async function buildApp({ config, db, mailer, storage, clock, providers, 
     graceDays: config.SUBSCRIPTION_GRACE_DAYS, webPublicUrl: config.WEB_PUBLIC_URL, apiPublicUrl: config.API_PUBLIC_URL,
   }, now, app.log));
   app.decorate('storage', storage ?? new LocalDiskStorage(config.UPLOAD_DIR));
+  app.decorate('chatHub', new ChatHub());
+  app.decorate('chatLimiter', new WriteLimiter(config.CHAT_WRITES_PER_MINUTE, 60_000, now));
+  // Open live streams would otherwise keep the HTTP server from closing.
+  app.addHook('preClose', async () => app.chatHub.closeAll());
 
   await app.register(helmet);
   await app.register(cors, { origin: config.WEB_ORIGIN, credentials: true });
@@ -112,6 +119,7 @@ export async function buildApp({ config, db, mailer, storage, clock, providers, 
       await api.register(adminBillingRoutes, { prefix: '/admin' });
       await api.register(adminSignalRoutes, { prefix: '/admin/signals' });
       await api.register(roomRoutes, { prefix: '/rooms' });
+      await api.register(messageRoutes, { prefix: '/rooms' });
       await api.register(staffRoomRoutes, { prefix: '/staff/rooms' });
       // Future modules (bots, copy-trading, chat) register here as new route plugins.
     },

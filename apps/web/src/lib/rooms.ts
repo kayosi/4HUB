@@ -13,7 +13,7 @@ export interface RoomSummary {
   /** Visible in the lobby but the viewer may not enter (premium room without access). */
   locked: boolean;
 }
-export interface RoomDetail extends RoomSummary { guidelines: string; createdAt: string; updatedAt: string }
+export interface RoomDetail extends RoomSummary { guidelines: string; archived: boolean; createdAt: string; updatedAt: string }
 export interface StaffRoom extends RoomDetail { sortOrder: number; archivedAt: string | null }
 
 export const CATEGORIES: { id: RoomCategory; label: string; blurb: string }[] = [

@@ -103,6 +103,25 @@ premium community. Rooms are `public` or `premium`; a premium community room is 
   `/staff/rooms`. Slugs are immutable; there is no delete. Every change is written to `audit_log`.
 - **Not yet built:** messaging/chat, notifications and moderation workflows.
 
+### Messaging (Prompt 4B)
+Chat inside community rooms (`room_messages`, migration 005). Messaging always requires a signed-in user, even in public rooms.
+- **Access:** every chat endpoint (history, send, edit, delete, stream) goes through one `authorizeRoom()` check that reuses the
+  room rules above, so a lapsed subscription locks chat like it locks the room page. Archived rooms are hidden from members and
+  read-only for staff. A message is only reachable through its own room.
+- **Endpoints (`/api/rooms/:slug/...`):** `GET messages?limit&before` (newest page first, `before` = cursor from `nextBefore`),
+  `POST messages`, `PATCH messages/:id` (author only), `DELETE messages/:id` (author, or moderator/admin; staff deletes are
+  audited; deleting wipes the content and leaves a tombstone), `GET stream` (Server-Sent Events).
+- **Real time:** Server-Sent Events plus plain HTTP writes, with no extra infrastructure. The browser reconnects by itself and the
+  client re-fetches the newest page on every (re)connect, so missed messages, edits and deletes are recovered. Open streams
+  re-check session and room access every `CHAT_STREAM_RECHECK_MS` and are closed when access is lost. The hub is in-process:
+  **run a single API instance**, or swap `chat/hub.ts` for a shared bus (PostgreSQL LISTEN/NOTIFY or Redis) before scaling out.
+  If a reverse proxy sits in front, disable response buffering for `/api/rooms/*/stream` (`X-Accel-Buffering: no` is already sent).
+- **Safety:** authors come from the session only (strict payloads reject `authorId` etc.); max 2000 characters; control and
+  bidi-override/zero-width characters are rejected or stripped; sends, edits and deletes are limited per user
+  (`CHAT_WRITES_PER_MINUTE`); retried sends are idempotent through an optional `clientId`; message text is stored as plain text and
+  only ever rendered as text, never as HTML.
+- **Not yet built:** notifications and moderation tools (reports, mutes, bans).
+
 ## Security model
 - Sessions: random 256-bit token in an `httpOnly`, `SameSite=Lax` (`Secure` in production) cookie; only its SHA-256 hash is stored.
 - Authorization is enforced **server-side** (`requireRole`); frontend guards are UX only.

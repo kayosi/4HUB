@@ -74,10 +74,11 @@ describe('rooms lobby', () => {
 
 describe('room page access states', () => {
   it('shows the room and its guidelines when access is granted', async () => {
-    mockFetch(as('free', () => ({ body: { room: detail() } })));
+    mockFetch(as('free', (url) => ({ body: url.includes('/messages') ? { messages: [], hasMore: false, nextBefore: null } : { room: detail() } })));
     renderAt('/rooms/general-chat');
     expect(await screen.findByRole('heading', { name: 'General Chat' })).toBeInTheDocument();
     expect(screen.getByText('Be kind and stay on topic')).toBeInTheDocument();
+    expect(await screen.findByRole('log', { name: 'Messages' })).toBeInTheDocument();
   });
 
   it('asks visitors to log in for a members-only room and reveals no guidelines', async () => {
