@@ -43,7 +43,7 @@ describe('subscriptionState (the single rule mapping dates to access)', () => {
 describe('buildEntitlement', () => {
   const now = at(-1);
   it('is free with no subscriptions', () => expect(buildEntitlement([], now, 3)).toEqual({ tier: 'free', capabilities: [] }));
-  it('grants the tier capabilities while access lasts', () => expect(buildEntitlement([sub()], now, 3)).toEqual({ tier: 'premium', capabilities: ['premium_signals'] }));
+  it('grants the tier capabilities while access lasts', () => expect(buildEntitlement([sub()], now, 3)).toEqual({ tier: 'premium', capabilities: ['premium_signals', 'premium_community'] }));
   it('is free again once expired, revoked, or for tiers it does not know', () => {
     expect(buildEntitlement([sub()], at(10), 3).tier).toBe('free');
     expect(buildEntitlement([sub({ revoked_at: at(-3) })], now, 3).tier).toBe('free');

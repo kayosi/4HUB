@@ -23,6 +23,7 @@ import billingRoutes from './routes/billing.js';
 import webhookRoutes from './routes/webhooks.js';
 import sandboxRoutes from './routes/sandbox.js';
 import adminBillingRoutes from './routes/adminBilling.js';
+import roomRoutes, { staffRoomRoutes } from './routes/rooms.js';
 import './types.js';
 
 export interface AppDeps {
@@ -110,7 +111,9 @@ export async function buildApp({ config, db, mailer, storage, clock, providers, 
       await api.register(adminRoutes, { prefix: '/admin' });
       await api.register(adminBillingRoutes, { prefix: '/admin' });
       await api.register(adminSignalRoutes, { prefix: '/admin/signals' });
-      // Future modules (payments, bots, copy-trading, community) register here as new route plugins.
+      await api.register(roomRoutes, { prefix: '/rooms' });
+      await api.register(staffRoomRoutes, { prefix: '/staff/rooms' });
+      // Future modules (bots, copy-trading, chat) register here as new route plugins.
     },
     { prefix: '/api' },
   );

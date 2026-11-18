@@ -21,6 +21,7 @@ export function Header() {
         </button>
         <nav id="main-nav" className="nav" data-open={open} aria-label="Main" onClick={close}>
           <NavLink to="/signals">Signals</NavLink>
+          <NavLink to="/rooms">Community</NavLink>
           <NavLink to="/pricing">Pricing</NavLink>
           {user ? (
             <>

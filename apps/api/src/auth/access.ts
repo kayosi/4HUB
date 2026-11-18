@@ -7,7 +7,7 @@ import { isStaff } from './roles.js';
 export type AuthUser = UserRow & { entitlement: Entitlement };
 
 /** Staff may moderate/manage content, so they can see all premium content. They do not get product tiers. */
-const STAFF_CAPABILITIES: readonly Capability[] = ['premium_signals'];
+const STAFF_CAPABILITIES: readonly Capability[] = ['premium_signals', 'premium_community'];
 
 /**
  * The single authorization check for paid content. Signals, comments, images, bookmarks and route guards all

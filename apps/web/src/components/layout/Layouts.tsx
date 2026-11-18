@@ -3,6 +3,7 @@ import { Header } from './Header';
 import { Footer } from './Footer';
 import { useAuth } from '../../auth/AuthContext';
 import { Spinner } from '../ui';
+import { isStaff } from '../../lib/roles';
 
 export function PublicLayout() {
   return (
@@ -27,11 +28,18 @@ export function DashboardLayout() {
           <span className="sidenav-label">Member</span>
           <NavLink to="/dashboard" end>Overview</NavLink>
           <NavLink to="/signals">Signals</NavLink>
+          <NavLink to="/rooms">Community</NavLink>
           <NavLink to="/saved">Saved</NavLink>
           <NavLink to="/profile">Profile</NavLink>
           <NavLink to="/settings">Settings</NavLink>
           <NavLink to="/billing">Billing</NavLink>
           {!user?.access.premium && <NavLink to="/pricing">Upgrade</NavLink>}
+          {user && isStaff(user.role) && (
+            <>
+              <span className="sidenav-label">Staff</span>
+              <NavLink to="/staff/rooms">Manage rooms</NavLink>
+            </>
+          )}
           {user?.role === 'admin' && (
             <>
               <span className="sidenav-label">Admin</span>

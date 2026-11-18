@@ -28,7 +28,7 @@ apps/api/src
   db/               pool, transactions, migration runner, repositories
   auth/             roles, argon2 password hashing, token hashing
   plugins/auth.ts   session resolution + requireAuth / requireRole(...)
-  routes/           auth, me, areas (member / moderation / admin)
+  routes/           auth, me, areas (member / moderation / admin), rooms (member + staff)
   lib/mailer.ts     notification seam (log-only for now)
 apps/web/src
   styles/           design tokens + components CSS
@@ -90,6 +90,18 @@ checkout; card data never touches 4HUB), `mock` (sandbox, dev/test only). See `.
 2. Use https `API_PUBLIC_URL` so providers can reach `/api/webhooks/payments/<provider>`; set `PAYMENT_PROVIDERS` without `mock`.
 3. Keep `MPESA_CALLBACK_TOKEN` and `PAYSTACK_SECRET_KEY` in a secret manager. Review KES prices in `/admin/plans`.
 4. Run PostgreSQL 13+ (migration 003 uses `gen_random_uuid()`).
+
+## Community rooms
+Categorised discussion spaces (`community_rooms`, migration 004): general discussion, trading discussion, market analysis and
+premium community. Rooms are `public` or `premium`; a premium community room is always premium (API validation + DB constraint).
+- **Access:** premium rooms use the new `premium_community` capability from the tier registry, checked only through `can()`
+  (same single rule as signals), so subscription expiry, grace and revocation apply immediately. Staff can enter every room.
+- **Visibility:** the lobby (`GET /api/rooms`) lists active rooms to everyone with a `locked` flag; `guidelines` (member-only
+  content) is returned only by `GET /api/rooms/:slug` to viewers who may enter (401 for visitors, 403 `PREMIUM_REQUIRED`
+  for free members; both carry only the public summary). Archived rooms return 404 to everyone but staff.
+- **Management:** moderators and admins use `/api/staff/rooms` (list, create, edit, archive, restore) and the web pages under
+  `/staff/rooms`. Slugs are immutable; there is no delete. Every change is written to `audit_log`.
+- **Not yet built:** messaging/chat, notifications and moderation workflows.
 
 ## Security model
 - Sessions: random 256-bit token in an `httpOnly`, `SameSite=Lax` (`Secure` in production) cookie; only its SHA-256 hash is stored.

@@ -225,3 +225,12 @@ textarea.input { min-height: 120px; padding: var(--space-3); resize: vertical; l
   table.stack td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; text-align: left; flex-shrink: 0; }
   table.stack td:empty { display: none; }
 }
+
+/* Community rooms */
+.room-grid { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
+.room-cat { font-size: 1.15rem; margin: 0; }
+.room-card { display: flex; flex-direction: column; gap: var(--space-3); }
+.room-card h3 { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+.room-card h3 a { color: var(--text); }
+.room-card-head { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: flex-start; justify-content: space-between; }
+.room-card[data-archived='true'] { opacity: 0.7; }

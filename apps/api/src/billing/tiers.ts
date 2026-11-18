@@ -3,7 +3,7 @@
  * Adding VIP or Copy Trading later = add an entry here (and plans in the database); no other code changes
  * are needed for the subscription, payment or entitlement machinery.
  */
-export type Capability = 'premium_signals';
+export type Capability = 'premium_signals' | 'premium_community';
 
 interface TierDef {
   rank: number;
@@ -13,7 +13,7 @@ interface TierDef {
 
 export const TIERS = {
   free: { rank: 0, label: 'Free', capabilities: [] },
-  premium: { rank: 1, label: 'Premium', capabilities: ['premium_signals'] },
+  premium: { rank: 1, label: 'Premium', capabilities: ['premium_signals', 'premium_community'] },
   // vip: { rank: 2, label: 'VIP', capabilities: ['premium_signals', 'vip_signals'] },
   // copy_trading: { rank: 2, label: 'Copy Trading', capabilities: ['premium_signals', 'copy_trading'] },
 } as const satisfies Record<string, TierDef>;

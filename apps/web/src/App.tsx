@@ -18,6 +18,10 @@ import Billing from './pages/Billing';
 import Receipt from './pages/Receipt';
 import AdminBilling from './pages/AdminBilling';
 import AdminPlans from './pages/AdminPlans';
+import Rooms from './pages/Rooms';
+import RoomDetail from './pages/RoomDetail';
+import StaffRooms from './pages/StaffRooms';
+import StaffRoomEdit from './pages/StaffRoomEdit';
 
 export default function App() {
   return (
@@ -34,6 +38,8 @@ export default function App() {
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/signals" element={<Signals />} />
         <Route path="/signals/:id" element={<SignalDetail />} />
+        <Route path="/rooms" element={<Rooms />} />
+        <Route path="/rooms/:slug" element={<RoomDetail />} />
       </Route>
       <Route element={<RequireAuth><DashboardLayout /></RequireAuth>}>
         <Route path="/saved" element={<Saved />} />
@@ -44,6 +50,9 @@ export default function App() {
         <Route path="/admin/billing" element={<RequireRole roles={['admin']}><AdminBilling /></RequireRole>} />
         <Route path="/admin/plans" element={<RequireRole roles={['admin']}><AdminPlans /></RequireRole>} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/staff/rooms" element={<RequireRole roles={['moderator', 'admin']}><StaffRooms /></RequireRole>} />
+        <Route path="/staff/rooms/new" element={<RequireRole roles={['moderator', 'admin']}><StaffRoomEdit /></RequireRole>} />
+        <Route path="/staff/rooms/:id/edit" element={<RequireRole roles={['moderator', 'admin']}><StaffRoomEdit /></RequireRole>} />
         <Route path="/admin/signals/new" element={<RequireRole roles={['admin']}><AdminSignalNew /></RequireRole>} />
         <Route path="/admin/signals/:id/edit" element={<RequireRole roles={['admin']}><AdminSignalEdit /></RequireRole>} />
         <Route path="/dashboard" element={<MemberDashboard />} />
