@@ -37,6 +37,7 @@ export function DashboardLayout() {
           {user && isStaff(user.role) && (
             <>
               <span className="sidenav-label">Staff</span>
+              <NavLink to="/staff/moderation">Moderation</NavLink>
               <NavLink to="/staff/rooms">Manage rooms</NavLink>
             </>
           )}

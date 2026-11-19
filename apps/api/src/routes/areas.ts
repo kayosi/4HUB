@@ -1,3 +1,5 @@
+import { countReportsByStatus, listActiveRestrictionsForUsers } from '../moderation/repo.js';
+import { restrictionSummary } from '../moderation/feedback.js';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { requireAuth, requireCapability, requireRole } from '../plugins/auth.js';
@@ -28,7 +30,8 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
 /** Moderation area: moderators and admins. */
 export const moderationRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireRole('moderator', 'admin'));
-  app.get('/overview', async () => ({ queue: [] as unknown[] }));
+  // The moderation queue itself lives in routes/moderation.ts; this is the dashboard summary.
+  app.get('/overview', async () => ({ queue: [] as unknown[], reports: await countReportsByStatus(app.db) }));
 };
 
 /** Admin area: admins only. */
@@ -48,11 +51,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const rows = await listUsers(app.db, q.limit, q.offset);
     const subs = await listSubscriptionsForUsers(app.db, rows.map((r) => r.id));
     const now = app.now();
+    const restrictions = await listActiveRestrictionsForUsers(app.db, rows.map((r) => r.id), now);
     return {
       users: rows.map((u) => {
         const ent = buildEntitlement(subs.filter((s) => s.user_id === u.id), now, app.config.SUBSCRIPTION_GRACE_DAYS);
         // "Has a paid subscription" (informational); content access itself is only ever decided by can().
-        return { ...adminUserView(u), premium: ent.tier !== 'free' };
+        const r = restrictions.get(u.id);
+        return {
+          ...adminUserView(u), premium: ent.tier !== 'free',
+          restrictions: { muted: r?.muted ? restrictionSummary(r.muted) : null, suspended: r?.suspended ? restrictionSummary(r.suspended) : null },
+        };
       }),
       limit: q.limit, offset: q.offset,
     };

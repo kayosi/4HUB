@@ -6,6 +6,7 @@ const matrix: Record<string, Role[]> = {
   '/api/member/overview': ['free', 'premium', 'moderator', 'admin'],
   '/api/member/premium': ['premium', 'moderator', 'admin'],
   '/api/moderation/overview': ['moderator', 'admin'],
+  '/api/moderation/reports': ['moderator', 'admin'],
   '/api/admin/overview': ['admin'],
   '/api/admin/users': ['admin'],
 };

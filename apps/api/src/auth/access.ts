@@ -1,10 +1,11 @@
 import type { UserRow } from '../db/repos.js';
+import type { ActiveRestrictions } from '../moderation/model.js';
 import type { Capability } from '../billing/tiers.js';
 import type { Entitlement } from '../billing/subscriptions.js';
 import { isStaff } from './roles.js';
 
 /** A signed-in user plus what their subscription currently entitles them to (resolved per request). */
-export type AuthUser = UserRow & { entitlement: Entitlement };
+export type AuthUser = UserRow & { entitlement: Entitlement; restrictions: ActiveRestrictions };
 
 /** Staff may moderate/manage content, so they can see all premium content. They do not get product tiers. */
 const STAFF_CAPABILITIES: readonly Capability[] = ['premium_signals', 'premium_community'];

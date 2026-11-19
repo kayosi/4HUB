@@ -32,14 +32,14 @@ const passwordSchema = z.object({
 const meRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth);
 
-  app.get('/', async (req) => ({ user: publicUser(req.user!, req.user!.entitlement) }));
+  app.get('/', async (req) => ({ user: publicUser(req.user!, req.user!.entitlement, req.user!.restrictions) }));
 
   // Only the fields below can be changed here: role and email are not accepted (unknown keys are dropped).
   app.patch('/', async (req) => {
     const body = parse(profileSchema, req.body) as ProfilePatch;
     const updated = await updateProfile(app.db, req.user!.id, body);
     if (!updated) throw notFound('User not found');
-    return { user: publicUser(updated, req.user!.entitlement) };
+    return { user: publicUser(updated, req.user!.entitlement, req.user!.restrictions) };
   });
 
   app.post('/password', { config: { rateLimit: { max: app.config.AUTH_RATE_LIMIT_MAX, timeWindow: '1 minute' } } }, async (req, reply) => {

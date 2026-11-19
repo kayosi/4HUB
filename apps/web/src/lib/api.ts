@@ -1,3 +1,5 @@
+export const SUSPENDED_EVENT = '4hub:suspended';
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -26,6 +28,10 @@ export async function api<T = void>(path: string, opts: { method?: string; body?
   const data = await res.json().catch(() => null);
   if (!res.ok) {
     const e = data?.error;
+    // A suspended account is refused on every request. Tell the app once, so it can show the reason (a failed sign-in shows it inline).
+    if (res.status === 403 && e?.code === 'ACCOUNT_SUSPENDED' && path !== '/auth/login') {
+      window.dispatchEvent(new CustomEvent(SUSPENDED_EVENT, { detail: { message: e.message, ...(e.details ?? {}) } }));
+    }
     throw new ApiError(res.status, e?.code ?? 'UNKNOWN', e?.message ?? 'Something went wrong', e?.details);
   }
   return data as T;

@@ -28,6 +28,9 @@ const schema = z
   MPESA_CALLBACK_TOKEN: z.string().min(16).optional(),
   PAYSTACK_SECRET_KEY: z.string().optional(),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+  /** Message reports per person: a burst limit and a daily cap, so reporting cannot be used to harass or flood the queue. */
+  REPORTS_PER_HOUR: z.coerce.number().int().positive().default(10),
+  REPORTS_PER_DAY: z.coerce.number().int().positive().default(30),
   /** Community chat: sends, edits and deletes per user per minute. */
   CHAT_WRITES_PER_MINUTE: z.coerce.number().int().positive().default(20),
   /** Concurrent live-update streams (browser tabs) per user. */

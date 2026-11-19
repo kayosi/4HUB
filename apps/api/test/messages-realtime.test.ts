@@ -234,6 +234,57 @@ describe('live updates over Server-Sent Events', () => {
     expect(await m2.waitForEvent('closed', 3000)).toBe(true);
   });
 
+  it('closes an open stream when the account is suspended, and refuses new connections with the reason', async () => {
+    const u = await seedUser(ctx.db, 'free', 'stream-suspended@example.com');
+    const cookie = await loginCookie(ctx.app, 'stream-suspended@example.com');
+    const s = await stream(pub.slug, cookie);
+    expect(s.status).toBe(200);
+    const res = await send(ctx, 'POST', `/api/admin/users/${u.id}/restrictions`, ctx.cookies.admin, { type: 'suspended', reason: 'Testing suspension' });
+    expect(res.statusCode).toBe(201);
+    expect(await s.waitForEvent('closed', 3000)).toBe(true);
+    expect(await s.waitForEnd(2000)).toBe(true);
+    const again = await openStream(base, pub.slug, cookie);
+    expect(again.status).toBe(403);
+    expect((await again.errorBody()).error).toMatchObject({ code: 'ACCOUNT_SUSPENDED', details: { reason: 'Testing suspension' } });
+  });
+
+  it('lets a muted member keep reading live while they cannot post', async () => {
+    const u = await seedUser(ctx.db, 'free', 'stream-muted@example.com');
+    const cookie = await loginCookie(ctx.app, 'stream-muted@example.com');
+    await send(ctx, 'POST', `/api/admin/users/${u.id}/restrictions`, ctx.cookies.admin, { type: 'muted', reason: 'Testing mute' });
+    const s = await stream(pub.slug, cookie);
+    expect(s.status).toBe(200);
+    await say(ctx, pub.slug, ctx.cookies.premium, 'still readable');
+    expect(await s.waitForEvent('message.created')).toBe(true);
+    expect((await send(ctx, 'POST', `/api/rooms/${pub.slug}/messages`, cookie, { body: 'nope' })).statusCode).toBe(403);
+    s.close();
+  });
+
+  it('delivers moderation changes live, without the hidden content or the reason', async () => {
+    const watcher = await stream(pub.slug, ctx.cookies.premium);
+    const m = await say(ctx, pub.slug, ctx.cookies.free, 'SECRET-OFFENDING-TEXT');
+    expect(await watcher.waitForEvent('message.created')).toBe(true);
+
+    await send(ctx, 'POST', `/api/moderation/messages/${m.id}/hide`, ctx.cookies.moderator, { reason: 'PRIVATE-REASON' });
+    expect(await watcher.waitForEvent('message.updated')).toBe(true);
+    const hidden = watcher.events('message.updated')[0]!;
+    expect(hidden.json).toMatchObject({ id: m.id, body: null, moderation: { state: 'hidden', reason: null } });
+    expect(hidden.data).not.toContain('SECRET-OFFENDING-TEXT');
+    expect(hidden.data).not.toContain('PRIVATE-REASON');
+
+    await send(ctx, 'POST', `/api/moderation/messages/${m.id}/unhide`, ctx.cookies.moderator);
+    const t1 = Date.now() + 3000;
+    while (watcher.events('message.updated').length < 2 && Date.now() < t1) await settle(25);
+    expect(watcher.events('message.updated')[1]!.json).toMatchObject({ id: m.id, body: 'SECRET-OFFENDING-TEXT', moderation: null });
+
+    await send(ctx, 'POST', `/api/moderation/messages/${m.id}/remove`, ctx.cookies.moderator, { reason: 'PRIVATE-REASON' });
+    expect(await watcher.waitForEvent('message.deleted')).toBe(true);
+    const removed = watcher.events('message.deleted')[0]!;
+    expect(removed.json).toMatchObject({ id: m.id, body: null, deleted: true, moderation: { state: 'removed', reason: null } });
+    expect(removed.data).not.toContain('PRIVATE-REASON');
+    watcher.close();
+  });
+
   it('ends open streams when the server shuts down, so it can close cleanly', async () => {
     const own = await setup({ CHAT_STREAM_RECHECK_MS: '60000' });
     const addr = await own.app.listen({ port: 0, host: '127.0.0.1' });

@@ -4,7 +4,7 @@ import type { MessageRow } from './model.js';
 
 type Q = Pick<Db, 'query'>;
 
-const SELECT = `select m.id, m.seq, m.room_id, m.author_id, m.client_id, m.body, m.created_at, m.edited_at, m.deleted_at, m.deleted_by,
+const SELECT = `select m.id, m.seq, m.room_id, m.author_id, m.client_id, m.body, m.created_at, m.edited_at, m.deleted_at, m.deleted_by, m.hidden_at, m.moderation_reason,
                        u.display_name as author_name, u.role as author_role
                   from room_messages m join users u on u.id = m.author_id`;
 

@@ -1,3 +1,5 @@
+import RestrictionControls from '../components/moderation/RestrictionControls';
+import { NO_RESTRICTIONS, type UserRestrictions } from '../lib/moderation';
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { api } from '../lib/api';
@@ -59,11 +61,12 @@ export function MemberDashboard() {
 }
 
 interface AdminOverview { usersByRole: Record<string, number> }
-interface AdminUsers { users: { id: string; email: string; displayName: string; role: string; premium: boolean; createdAt: string }[] }
+interface AdminUsers { users: { id: string; email: string; displayName: string; role: string; premium: boolean; createdAt: string; restrictions?: UserRestrictions }[] }
 
 export function AdminDashboard() {
   const { user: me } = useAuth();
   const [roleError, setRoleError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
   const overview = useAsync(() => api<AdminOverview>('/admin/overview'));
   const users = useAsync(() => api<AdminUsers>('/admin/users?limit=25'));
   // Complimentary access. Every grant/revoke needs a reason, which is written to the audit log.
@@ -104,6 +107,7 @@ export function AdminDashboard() {
       <h2>Recent users</h2>
       <p className="muted small">Roles are for staff. Premium comes from a paid or granted subscription.</p>
       {roleError && <Alert>{roleError}</Alert>}
+      {notice && <Alert kind="success">{notice}</Alert>}
       {users.status === 'loading' && <Spinner />}
       {users.status === 'error' && <ErrorState message={users.error.message} onRetry={users.reload} />}
       {users.status === 'ready' && (users.data.users.length === 0 ? (
@@ -111,7 +115,7 @@ export function AdminDashboard() {
       ) : (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Premium</th><th>Joined</th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Premium</th><th>Restrictions</th><th>Joined</th></tr></thead>
             <tbody>
               {users.data.users.map((u) => (
                 <tr key={u.id}>
@@ -129,6 +133,7 @@ export function AdminDashboard() {
                       ? <Button small variant="ghost" onClick={() => revoke(u.id, u.displayName)}>Revoke</Button>
                       : <Button small variant="ghost" onClick={() => grant(u.id, u.displayName)}>Grant 30 days</Button>}
                   </td>
+                  <td>{u.role === 'admin' ? <span className="muted">—</span> : <RestrictionControls userId={u.id} name={u.displayName} restrictions={u.restrictions ?? NO_RESTRICTIONS} onChange={(m) => { setNotice(m); users.reload(); }} />}</td>
                   <td>{new Date(u.createdAt).toLocaleDateString()}</td>
                 </tr>
               ))}

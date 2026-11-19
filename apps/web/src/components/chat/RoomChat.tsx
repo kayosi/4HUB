@@ -1,43 +1,98 @@
-import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ApiError } from '../../lib/api';
 import { useAuth } from '../../auth/AuthContext';
-import { isStaff } from '../../lib/roles';
-import { charCount, formatMessageTime, MAX_MESSAGE_CHARS, useRoomChat, uuid, type ChatMessage, type LiveState } from '../../lib/chat';
+import { charCount, formatMessageTime, MAX_MESSAGE_CHARS, useRoomChat, uuid, type ChatMessage, type LiveState, type Muted } from '../../lib/chat';
+import { REPORT_REASONS, untilText, type ReportReason } from '../../lib/moderation';
+import type { Role } from '../../lib/roles';
 import { Badge, Button, ButtonLink, Spinner } from '../ui';
 import { ErrorState } from '../ui/states';
 
 const LIVE_LABEL: Record<LiveState, string> = { connecting: 'Connecting…', live: 'Live', reconnecting: 'Reconnecting…', offline: 'Offline' };
+/** A mute that has already run out no longer counts, even if the page was loaded while it was active. */
+const activeMute = (m: Muted | null): Muted | null => (m && (!m.expiresAt || new Date(m.expiresAt).getTime() > Date.now()) ? m : null);
 const errorText = (e: unknown) => (e instanceof ApiError ? e.message : 'Something went wrong. Please try again.');
 
-function MessageItem({ m, own, canDelete, onEdit, onDelete }: {
-  m: ChatMessage; own: boolean; canDelete: boolean;
-  onEdit: (id: string, body: string) => Promise<void>; onDelete: (id: string) => Promise<void>;
-}) {
-  const [mode, setMode] = useState<'view' | 'edit' | 'confirm'>('view');
+interface ItemProps {
+  m: ChatMessage;
+  own: boolean;
+  viewerRole: Role | null;
+  /** A muted member can still read, report and delete their own messages, but not edit. */
+  muted: boolean;
+  onEdit: (id: string, body: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onReport: (id: string, reason: ReportReason, details: string) => Promise<void>;
+  onModerate: (id: string, action: 'hide' | 'unhide' | 'remove', reason?: string) => Promise<void>;
+}
+type Mode = 'view' | 'edit' | 'confirm' | 'report' | 'hide' | 'remove';
+
+/** Mirrors the server's rank rule for the buttons shown; the server still decides. */
+const canModerate = (viewer: Role | null, authorIsStaff: boolean) => viewer === 'admin' || (viewer === 'moderator' && !authorIsStaff);
+
+function MessageItem({ m, own, viewerRole, muted, onEdit, onDelete, onReport, onModerate }: ItemProps) {
+  const [mode, setMode] = useState<Mode>('view');
   const [draft, setDraft] = useState(m.body ?? '');
+  const [reportReason, setReportReason] = useState<ReportReason>('spam');
+  const [details, setDetails] = useState('');
+  const [modReason, setModReason] = useState('');
+  const [reported, setReported] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const run = async (fn: () => Promise<void>) => {
+  const run = async (fn: () => Promise<void>, after: () => void = () => setMode('view')) => {
     setBusy(true);
     setError('');
-    try { await fn(); setMode('view'); } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
+    try { await fn(); after(); } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
   };
   const trimmed = draft.trim();
   const canSave = trimmed.length > 0 && trimmed !== m.body && charCount(trimmed) <= MAX_MESSAGE_CHARS;
+  const mod = m.moderation ?? null;
+  const name = m.author.displayName;
+  const staff = canModerate(viewerRole, m.author.isStaff) && !own;
+
+  const submitReport = (e: FormEvent) => {
+    e.preventDefault();
+    if (reportReason === 'other' && details.trim().length < 5) { setError('Please describe the problem (at least 5 characters).'); return; }
+    void run(async () => {
+      try { await onReport(m.id, reportReason, details.trim()); } catch (err) {
+        if (err instanceof ApiError && err.code === 'ALREADY_REPORTED') { setReported(true); setMode('view'); return; }
+        throw err;
+      }
+    }, () => { setReported(true); setMode('view'); setDetails(''); });
+  };
+  const submitModeration = (e: FormEvent) => {
+    e.preventDefault();
+    if (modReason.trim().length < 3) { setError('Give a short reason. The author will see it.'); return; }
+    void run(() => onModerate(m.id, mode === 'hide' ? 'hide' : 'remove', modReason.trim()), () => { setMode('view'); setModReason(''); });
+  };
+
+  // What replaces the text when a message is not shown. Moderator actions are stated plainly, to the author most of all.
+  const placeholder = (() => {
+    if (mod?.state === 'removed') return own ? 'Your message was removed by a moderator.' : 'This message was removed by a moderator.';
+    if (mod?.state === 'hidden') return own ? 'Your message was hidden by a moderator while it is reviewed.' : 'This message was hidden by a moderator.';
+    return m.deleted ? 'This message was deleted' : null;
+  })();
 
   return (
-    <article className="chat-msg" data-own={own ? 'true' : undefined} aria-label={`Message from ${m.author.displayName}`}>
+    <article className="chat-msg" data-own={own ? 'true' : undefined} data-moderated={mod ? mod.state : undefined} aria-label={`Message from ${name}`}>
       <header className="chat-msg-head">
-        <strong className="chat-author">{m.author.displayName}</strong>
+        <strong className="chat-author">{name}</strong>
         {m.author.isStaff && <Badge accent>Staff</Badge>}
         <time className="muted small" dateTime={m.createdAt} title={new Date(m.createdAt).toLocaleString()}>{formatMessageTime(m.createdAt)}</time>
-        {m.editedAt && !m.deleted && <span className="muted small">(edited)</span>}
+        {m.editedAt && !m.deleted && !mod && <span className="muted small">(edited)</span>}
       </header>
 
-      {m.deleted ? (
-        <p className="chat-body chat-deleted">This message was deleted</p>
+      {placeholder ? (
+        <>
+          <p className="chat-body chat-deleted">{placeholder}</p>
+          {mod?.reason && <p className="small muted chat-reason">Reason: {mod.reason}</p>}
+          {mod?.state === 'hidden' && staff && (
+            <div className="row chat-actions">
+              <Button small variant="secondary" loading={busy} aria-label={`Restore message from ${name}`} onClick={() => run(() => onModerate(m.id, 'unhide'), () => undefined)}>Restore</Button>
+              <Button small variant="ghost" aria-label={`Remove message from ${name}`} onClick={() => { setError(''); setMode('remove'); }}>Remove</Button>
+            </div>
+          )}
+        </>
       ) : mode === 'edit' ? (
         <div className="stack">
           <textarea className="input chat-edit" aria-label="Edit message" value={draft} rows={3} autoFocus
@@ -59,12 +114,44 @@ function MessageItem({ m, own, canDelete, onEdit, onDelete }: {
           <Button small variant="ghost" disabled={busy} onClick={() => { setMode('view'); setError(''); }}>Cancel</Button>
         </div>
       )}
-      {error && <p className="field-error" role="alert">{error}</p>}
 
-      {!m.deleted && mode === 'view' && (own || canDelete) && (
+      {mode === 'report' && (
+        <form className="chat-form stack" onSubmit={submitReport} aria-label={`Report message from ${name}`}>
+          <label className="small" htmlFor={`rr-${m.id}`}>Why are you reporting this message?</label>
+          <select id={`rr-${m.id}`} className="input" value={reportReason} onChange={(e) => setReportReason(e.target.value as ReportReason)}>
+            {REPORT_REASONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+          </select>
+          <textarea className="input" aria-label="Report details" rows={2} maxLength={500} value={details} placeholder={reportReason === 'other' ? 'Describe the problem' : 'Add details (optional)'}
+            onChange={(e) => setDetails(e.target.value)} />
+          <div className="row">
+            <Button small type="submit" loading={busy}>Send report</Button>
+            <Button small type="button" variant="ghost" disabled={busy} onClick={() => { setMode('view'); setError(''); }}>Cancel</Button>
+          </div>
+        </form>
+      )}
+
+      {(mode === 'hide' || mode === 'remove') && (
+        <form className="chat-form stack" onSubmit={submitModeration} aria-label={`${mode === 'hide' ? 'Hide' : 'Remove'} message from ${name}`}>
+          <label className="small" htmlFor={`mr-${m.id}`}>Reason (the author will see this)</label>
+          <input id={`mr-${m.id}`} className="input" value={modReason} maxLength={200} onChange={(e) => setModReason(e.target.value)} autoFocus />
+          <p className="muted small">{mode === 'hide' ? 'Hidden messages can be restored later.' : 'Removing permanently deletes the message text. This cannot be undone.'}</p>
+          <div className="row">
+            <Button small type="submit" loading={busy}>{mode === 'hide' ? 'Hide message' : 'Remove message'}</Button>
+            <Button small type="button" variant="ghost" disabled={busy} onClick={() => { setMode('view'); setError(''); }}>Cancel</Button>
+          </div>
+        </form>
+      )}
+
+      {error && <p className="field-error" role="alert">{error}</p>}
+      {reported && mode === 'view' && <p className="small muted" role="status">Report sent. Thank you. A moderator will review it.</p>}
+
+      {!placeholder && mode === 'view' && (
         <div className="row chat-actions">
-          {own && <Button small variant="ghost" aria-label={`Edit message from ${m.author.displayName}`} onClick={() => { setDraft(m.body ?? ''); setMode('edit'); }}>Edit</Button>}
-          {canDelete && <Button small variant="ghost" aria-label={`Delete message from ${m.author.displayName}`} onClick={() => setMode('confirm')}>Delete</Button>}
+          {own && !muted && <Button small variant="ghost" aria-label={`Edit message from ${name}`} onClick={() => { setDraft(m.body ?? ''); setMode('edit'); }}>Edit</Button>}
+          {own && <Button small variant="ghost" aria-label={`Delete message from ${name}`} onClick={() => setMode('confirm')}>Delete</Button>}
+          {!own && viewerRole && !reported && <Button small variant="ghost" aria-label={`Report message from ${name}`} onClick={() => { setError(''); setMode('report'); }}>Report</Button>}
+          {staff && <Button small variant="ghost" aria-label={`Hide message from ${name}`} onClick={() => { setError(''); setMode('hide'); }}>Hide</Button>}
+          {staff && <Button small variant="ghost" aria-label={`Remove message from ${name}`} onClick={() => { setError(''); setMode('remove'); }}>Remove</Button>}
         </div>
       )}
     </article>
@@ -165,8 +252,8 @@ export default function RoomChat({ slug, archived = false }: { slug: string; arc
     );
   }
 
-  const staff = !!user && isStaff(user.role);
   const readOnly = archived || chat.readOnly;
+  const muted = activeMute(chat.muted ?? user?.restrictions?.muted ?? null);
   return (
     <section className="card chat" aria-label="Conversation">
       <header className="chat-head">
@@ -183,8 +270,8 @@ export default function RoomChat({ slug, archived = false }: { slug: string; arc
           )}
           {chat.messages.length === 0 && <p className="muted chat-empty">No messages yet. Start the conversation.</p>}
           {chat.messages.map((m) => (
-            <MessageItem key={m.id} m={m} own={m.author.id === user?.id} canDelete={m.author.id === user?.id || staff}
-              onEdit={chat.edit} onDelete={chat.remove} />
+            <MessageItem key={m.id} m={m} own={m.author.id === user?.id} viewerRole={user?.role ?? null} muted={!!muted}
+              onEdit={chat.edit} onDelete={chat.remove} onReport={chat.report} onModerate={chat.moderate} />
           ))}
         </div>
         {showJump && <button type="button" className="btn btn-secondary btn-sm chat-jump" aria-label="Jump to latest messages"
@@ -192,7 +279,9 @@ export default function RoomChat({ slug, archived = false }: { slug: string; arc
       </div>
       {readOnly
         ? <p className="chat-readonly muted" role="note">This room is archived and read-only.</p>
-        : <Composer onSend={chat.send} />}
+        : muted
+          ? <p className="chat-readonly" role="note"><strong>You cannot post messages {untilText(muted.expiresAt)}.</strong> Reason: {muted.reason}</p>
+          : <Composer onSend={chat.send} />}
     </section>
   );
 }

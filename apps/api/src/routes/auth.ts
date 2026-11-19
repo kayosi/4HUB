@@ -1,3 +1,6 @@
+import { getActiveRestrictions } from '../moderation/repo.js';
+import { restrictionDetails, suspendedError } from '../moderation/feedback.js';
+import { NO_RESTRICTIONS, type ActiveRestrictions } from '../moderation/model.js';
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { hashPassword, verifyPassword, dummyHash } from '../auth/password.js';
@@ -29,7 +32,7 @@ const resetRequestSchema = z.object({ email });
 const resetConfirmSchema = z.object({ token: z.string().min(20).max(200), password });
 
 /** What a member may see about THEMSELVES. */
-export const publicUser = (u: UserRow, entitlement: Entitlement) => ({
+export const publicUser = (u: UserRow, entitlement: Entitlement, restrictions: ActiveRestrictions = NO_RESTRICTIONS) => ({
   id: u.id,
   email: u.email,
   displayName: u.display_name,
@@ -40,6 +43,8 @@ export const publicUser = (u: UserRow, entitlement: Entitlement) => ({
   preferredAssets: u.preferred_assets,
   notificationPrefs: u.notification_prefs,
   access: { tier: entitlement.tier, premium: can({ role: u.role, entitlement }, 'premium_signals') },
+  // So the interface can tell a muted member why they cannot post. (A suspended account never gets this far.)
+  restrictions: { muted: restrictions.muted ? restrictionDetails(restrictions.muted) : null },
 });
 
 /** Minimal view for the admin user list: no profile details beyond what administration needs. */
@@ -86,8 +91,11 @@ const authRoutes: FastifyPluginAsync = async (app) => {
     const found = await findUserByEmail(app.db, body.email);
     const ok = await verifyPassword(found?.password_hash ?? (await dummyHash()), body.password);
     if (!found || !ok) throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
+    // Checked after the password so the reason is only ever shown to the account's owner.
+    const restrictions = await getActiveRestrictions(app.db, found.id, app.now());
+    if (restrictions.suspended) throw suspendedError(restrictions.suspended);
     await startSession(reply, found.id);
-    return { user: publicUser(found, await app.billing.entitlementFor(found.id)) };
+    return { user: publicUser(found, await app.billing.entitlementFor(found.id), restrictions) };
   });
 
   app.post('/logout', { preHandler: requireAuth }, async (req, reply) => {

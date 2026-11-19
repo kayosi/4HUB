@@ -15,6 +15,8 @@ export interface ChatMessage {
   createdAt: string;
   editedAt: string | null;
   deleted: boolean;
+  /** Set when a moderator hid (reversible) or removed the message. The reason is only sent to its author and to staff. */
+  moderation?: { state: 'hidden' | 'removed'; reason: string | null } | null;
 }
 interface Page { messages: ChatMessage[]; hasMore: boolean; nextBefore: number | null }
 
@@ -75,8 +77,9 @@ export const charCount = (s: string) => Array.from(s).length;
 export type ChatPhase = 'loading' | 'ready' | 'error' | 'denied';
 export type LiveState = 'connecting' | 'live' | 'reconnecting' | 'offline';
 
-interface State extends ChatList { phase: ChatPhase; error: string; deniedStatus: number | null; readOnly: boolean }
-const initial: State = { phase: 'loading', messages: [], hasMore: false, error: '', deniedStatus: null, readOnly: false };
+export interface Muted { reason: string; expiresAt: string | null }
+interface State extends ChatList { phase: ChatPhase; error: string; deniedStatus: number | null; readOnly: boolean; muted: Muted | null }
+const initial: State = { phase: 'loading', messages: [], hasMore: false, error: '', deniedStatus: null, readOnly: false, muted: null };
 const isAccessError = (e: unknown): e is ApiError => e instanceof ApiError && (e.status === 401 || e.status === 403 || e.status === 404);
 
 /**
@@ -173,13 +176,19 @@ export function useRoomChat(slug: string) {
     }
   }, [fetchPage, deny]);
 
-  /** Runs a write; access errors flip the whole chat into its denied state, an archived room makes it read-only. */
+  /**
+   * Runs a write. Losing access (401, or 403 PREMIUM_REQUIRED) flips the whole chat into its denied state, an archived room makes it
+   * read-only, and a mute switches the composer off while reading carries on. Other refusals are left to the caller to display.
+   */
   const write = useCallback(async <T,>(fn: () => Promise<T>): Promise<T> => {
     try {
       return await fn();
     } catch (e) {
       if (e instanceof ApiError && e.code === 'ROOM_ARCHIVED') setState((s) => ({ ...s, readOnly: true }));
-      else if (e instanceof ApiError && (e.status === 401 || e.status === 403)) deny(e);
+      else if (e instanceof ApiError && e.code === 'ACCOUNT_RESTRICTED') {
+        const d = e.details as unknown as { reason?: string; expiresAt?: string | null } | undefined;
+        setState((s) => ({ ...s, muted: { reason: d?.reason ?? e.message, expiresAt: d?.expiresAt ?? null } }));
+      } else if (e instanceof ApiError && (e.status === 401 || (e.status === 403 && e.code === 'PREMIUM_REQUIRED'))) deny(e);
       throw e;
     }
   }, [deny]);
@@ -201,5 +210,15 @@ export function useRoomChat(slug: string) {
 
   // Without EventSource support there are no live updates; history and sending still work.
   const liveState: LiveState = typeof EventSource === 'undefined' ? 'offline' : live;
-  return { ...state, live: liveState, loadingOlder, olderError, loadOlder, reload, send, edit, remove };
+  const report = useCallback((id: string, reason: string, details: string) => write(async () => {
+    await api(`${path}/${id}/report`, { method: 'POST', body: details ? { reason, details } : { reason } });
+  }), [path, write]);
+
+  /** Staff only (enforced by the server). Hiding and removing need a reason, which the author is shown. */
+  const moderate = useCallback((id: string, action: 'hide' | 'unhide' | 'remove', reason?: string) => write(async () => {
+    const { message } = await api<{ message: ChatMessage }>(`/moderation/messages/${id}/${action}`, { method: 'POST', ...(reason ? { body: { reason } } : {}) });
+    setState((s) => ({ ...s, messages: replaceMessage(s.messages, message) }));
+  }), [write]);
+
+  return { ...state, live: liveState, loadingOlder, olderError, loadOlder, reload, send, edit, remove, report, moderate };
 }

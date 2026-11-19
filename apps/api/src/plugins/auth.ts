@@ -6,8 +6,13 @@ import { AppError, forbidden, unauthenticated } from '../errors.js';
 import type { Role } from '../auth/roles.js';
 import { can } from '../auth/access.js';
 import type { Capability } from '../billing/tiers.js';
+import { getActiveRestrictions } from '../moderation/repo.js';
+import { suspendedError } from '../moderation/feedback.js';
 
 export const SESSION_COOKIE = '4hub_session';
+
+/** A suspended account may still sign out (and sign in as someone else); everything else is refused with the reason. */
+const SUSPENDED_ALLOWED = new Set(['/api/auth/logout', '/api/auth/login']);
 
 export default fp(async (app) => {
   app.decorateRequest('user', null);
@@ -21,8 +26,12 @@ export default fp(async (app) => {
     const user = await findUserBySession(app.db, tokenHash);
     if (user) {
       // Premium is resolved from the subscription state on EVERY request, so access follows billing immediately.
-      req.user = { ...user, entitlement: await app.billing.entitlementFor(user.id) };
+      const restrictions = await getActiveRestrictions(app.db, user.id, app.now());
+      req.user = { ...user, entitlement: await app.billing.entitlementFor(user.id), restrictions };
       req.sessionTokenHash = tokenHash;
+      // Enforced here, once, for every route, so no endpoint (including ones that merely read req.user) can forget it.
+      // Restrictions are checked per request, so lifting or expiry takes effect immediately.
+      if (restrictions.suspended && !SUSPENDED_ALLOWED.has(req.url.split('?')[0]!)) throw suspendedError(restrictions.suspended);
     }
   });
 });

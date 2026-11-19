@@ -1,4 +1,6 @@
 import { Route, Routes } from 'react-router-dom';
+import { useAuth } from './auth/AuthContext';
+import Suspended from './pages/Suspended';
 import { AdaptiveLayout, PublicLayout, DashboardLayout } from './components/layout/Layouts';
 import { RequireAuth, RequireRole } from './auth/guards';
 import { NotFoundState } from './components/ui/states';
@@ -22,8 +24,11 @@ import Rooms from './pages/Rooms';
 import RoomDetail from './pages/RoomDetail';
 import StaffRooms from './pages/StaffRooms';
 import StaffRoomEdit from './pages/StaffRoomEdit';
+import StaffModeration from './pages/StaffModeration';
 
 export default function App() {
+  const { suspension } = useAuth();
+  if (suspension) return <Suspended />;
   return (
     <Routes>
       <Route element={<PublicLayout />}>
@@ -50,6 +55,7 @@ export default function App() {
         <Route path="/admin/billing" element={<RequireRole roles={['admin']}><AdminBilling /></RequireRole>} />
         <Route path="/admin/plans" element={<RequireRole roles={['admin']}><AdminPlans /></RequireRole>} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/staff/moderation" element={<RequireRole roles={['moderator', 'admin']}><StaffModeration /></RequireRole>} />
         <Route path="/staff/rooms" element={<RequireRole roles={['moderator', 'admin']}><StaffRooms /></RequireRole>} />
         <Route path="/staff/rooms/new" element={<RequireRole roles={['moderator', 'admin']}><StaffRoomEdit /></RequireRole>} />
         <Route path="/staff/rooms/:id/edit" element={<RequireRole roles={['moderator', 'admin']}><StaffRoomEdit /></RequireRole>} />

@@ -122,6 +122,27 @@ Chat inside community rooms (`room_messages`, migration 005). Messaging always r
   only ever rendered as text, never as HTML.
 - **Not yet built:** notifications and moderation tools (reports, mutes, bans).
 
+### Moderation (Prompt 4C)
+Reporting, a moderator queue, message hiding/removal and account restrictions (migration 006). Moderation is a layer over rooms and
+messaging, not a second system: it reuses the room access check, the role model, `audit_log` and the live-event hub.
+- **Reports:** any signed-in member who can read a message can report it (`POST /api/rooms/:slug/messages/:id/report`) with a reason
+  and optional details. One report per person per message; not your own message; not an already hidden/removed one. The reported
+  text is **snapshotted** on the report, so edits, hiding or removal never change the evidence. Abuse limits (`REPORTS_PER_HOUR`,
+  `REPORTS_PER_DAY`) are counted from stored reports, so they survive restarts. Reporters are never revealed to the reported member.
+- **Queue and decisions (`/api/moderation/*`, moderators and admins):** list/filter reports, view one, resolve or dismiss it,
+  and **hide** (reversible, text kept for staff), **unhide** or **remove** (permanent, text wiped) a message. Hide/remove need a
+  reason, which the author is shown, settle every open report on that message, and are broadcast over the existing live stream
+  without the reason or the hidden text.
+- **Rank rule:** moderators act on members; administrators on moderators and members; nobody on administrators or themselves.
+  Nobody closes a report they filed or one about themselves.
+- **Restrictions (`/api/admin/*`, administrators only):** `muted` (can read, report and delete their own messages, cannot post or
+  edit) and `suspended` (every request except logout/login is refused with the reason). Reason required; optional duration;
+  they expire on their own and can be lifted. History is kept. Enforced centrally in the auth plugin and the shared room check,
+  and open live streams close within `CHAT_STREAM_RECHECK_MS`.
+- **Audit:** `report.resolved`, `report.dismissed`, `message.hidden`, `message.unhidden`, `message.removed`, `user.restricted`,
+  `user.restriction_lifted`. Hide/remove entries keep a snapshot of the content, because the chat copy is wiped on removal.
+- **Not yet built:** notifications (people learn of actions when they next use the app), appeals, automatic moderation.
+
 ## Security model
 - Sessions: random 256-bit token in an `httpOnly`, `SameSite=Lax` (`Secure` in production) cookie; only its SHA-256 hash is stored.
 - Authorization is enforced **server-side** (`requireRole`); frontend guards are UX only.

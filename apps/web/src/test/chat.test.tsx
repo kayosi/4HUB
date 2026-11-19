@@ -378,12 +378,14 @@ describe('editing and deleting', () => {
     expect(s.calls.find((c) => c.method === 'DELETE')!.url).toBe('/api/rooms/general-chat/messages/m1');
   });
 
-  it('lets staff delete anyone\'s message but not edit it', async () => {
+  it('gives staff Hide and Remove (with a recorded reason) on others\' messages, but never Edit', async () => {
     startServer('moderator', [msg(1, { body: 'someone else' })]);
     renderRoom();
     await screen.findByText('someone else');
-    expect(screen.getByRole('button', { name: 'Delete message from Bob' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hide message from Bob' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove message from Bob' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit message from Bob' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete message from Bob' })).not.toBeInTheDocument(); // removal goes through moderation
   });
 });
 

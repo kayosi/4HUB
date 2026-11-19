@@ -25,6 +25,7 @@ import sandboxRoutes from './routes/sandbox.js';
 import adminBillingRoutes from './routes/adminBilling.js';
 import roomRoutes, { staffRoomRoutes } from './routes/rooms.js';
 import messageRoutes from './routes/messages.js';
+import { adminRestrictionRoutes, moderationQueueRoutes } from './routes/moderation.js';
 import { ChatHub } from './chat/hub.js';
 import { WriteLimiter } from './chat/limiter.js';
 import './types.js';
@@ -121,6 +122,8 @@ export async function buildApp({ config, db, mailer, storage, clock, providers, 
       await api.register(roomRoutes, { prefix: '/rooms' });
       await api.register(messageRoutes, { prefix: '/rooms' });
       await api.register(staffRoomRoutes, { prefix: '/staff/rooms' });
+      await api.register(moderationQueueRoutes, { prefix: '/moderation' });
+      await api.register(adminRestrictionRoutes, { prefix: '/admin' });
       // Future modules (bots, copy-trading, chat) register here as new route plugins.
     },
     { prefix: '/api' },

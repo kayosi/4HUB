@@ -13,6 +13,8 @@ export interface MessageRow {
   edited_at: Date | null;
   deleted_at: Date | null;
   deleted_by: string | null;
+  hidden_at: Date | null;
+  moderation_reason: string | null;
   author_name: string;
   author_role: Role;
 }
