@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
+import type { SignalRef } from '../events.js';
 import { requireRole } from '../plugins/auth.js';
 import { AppError, badRequest, conflict, notFound } from '../errors.js';
 import { parse } from '../lib/validate.js';
@@ -22,6 +23,8 @@ const adminSignalRoutes: FastifyPluginAsync = async (app) => {
     if (!s) throw notFound('Signal not found');
     return s;
   }
+  /** The facts about a signal that listeners may use (the public ones; see notifications/templates.ts). */
+  const ref = (s: SignalRow, actorId: string): SignalRef => ({ signalId: s.id, asset: s.asset, direction: s.direction, timeframe: s.timeframe, visibility: s.visibility, actorId });
   const ensureActive = (s: SignalRow) => {
     if (s.status === 'closed') throw conflict('This signal is closed and can no longer be changed');
   };
@@ -40,6 +43,7 @@ const adminSignalRoutes: FastifyPluginAsync = async (app) => {
       await addUpdate(tx, { signalId: s.id, authorId: req.user!.id, kind: 'created', message: `${s.asset} ${s.direction === 'buy' ? 'Buy' : 'Sell'} published` });
       return s;
     });
+    await app.events.emit('signal.published', ref(row, req.user!.id));
     return reply.code(201).send(await presentDetail(db, row, req.user, { countView: false }));
   });
 
@@ -53,15 +57,14 @@ const adminSignalRoutes: FastifyPluginAsync = async (app) => {
     problem(levelProblem({ direction: merged.direction, entry: merged.entry, stopLoss: merged.stop_loss, tps: [merged.take_profit_1, merged.take_profit_2, merged.take_profit_3] }, false));
     if (Object.keys(columns).length === 0 && !note) throw badRequest('Nothing changed');
 
-    const row = await withTransaction(db, async (tx) => {
+    const { row, updateId, kind, message } = await withTransaction(db, async (tx) => {
       const updated = Object.keys(columns).length ? (await updateSignal(tx, before.id, columns))! : before;
       const auto = Object.keys(changes).length ? describe(changes, updated.entry) : { kind: 'note' as const, message: '' };
-      await addUpdate(tx, {
-        signalId: before.id, authorId: req.user!.id, kind: auto.kind,
-        message: note || auto.message, changes,
-      });
-      return updated;
+      const text = note || auto.message;
+      const id = await addUpdate(tx, { signalId: before.id, authorId: req.user!.id, kind: auto.kind, message: text, changes });
+      return { row: updated, updateId: id, kind: auto.kind, message: text };
     });
+    await app.events.emit('signal.updated', { ...ref(row, req.user!.id), updateId, kind, message });
     return presentDetail(db, row, req.user, { countView: false });
   });
 
@@ -70,10 +73,12 @@ const adminSignalRoutes: FastifyPluginAsync = async (app) => {
     const s = await load((req.params as { id: string }).id);
     ensureActive(s);
     const { message } = parse(noteSchema, req.body);
-    await withTransaction(db, async (tx) => {
-      await addUpdate(tx, { signalId: s.id, authorId: req.user!.id, kind: 'note', message });
+    const updateId = await withTransaction(db, async (tx) => {
+      const id = await addUpdate(tx, { signalId: s.id, authorId: req.user!.id, kind: 'note', message });
       await updateSignal(tx, s.id, {});
+      return id;
     });
+    await app.events.emit('signal.updated', { ...ref(s, req.user!.id), updateId, kind: 'note', message });
     return reply.code(201).send(await presentDetail(db, (await load(s.id)), req.user, { countView: false }));
   });
 
@@ -96,6 +101,7 @@ const adminSignalRoutes: FastifyPluginAsync = async (app) => {
       });
       return closed;
     });
+    await app.events.emit('signal.closed', { ...ref(row, req.user!.id), result: b.result });
     return presentDetail(db, row, req.user, { countView: false });
   });
 

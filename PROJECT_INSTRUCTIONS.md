@@ -8,8 +8,8 @@ Read this file completely before starting any implementation task. Repository: h
 trading-content platform. It is NOT a native app and NOT a PWA. One codebase; no separate mobile projects.
 
 Delivered so far: foundation (auth, roles, design system) · signals (core product) · billing and subscriptions ·
-community rooms (Prompt 4A) · community messaging (Prompt 4B) · community moderation (Prompt 4C). Not built yet (do not start unprompted): notifications,
-appeals, automatic moderation, courses, bots, copy trading.
+community rooms (Prompt 4A) · community messaging (Prompt 4B) · community moderation (Prompt 4C) · notification backend (Prompt 4D). Not built yet (do not start unprompted): notification UI,
+email/SMS/push delivery, appeals, automatic moderation, courses, bots, copy trading.
 
 ## 2. Architecture and stack
 npm workspaces monorepo.
@@ -21,14 +21,14 @@ npm workspaces monorepo.
 
 API layout (`apps/api/src`): `app.ts` (factory, registers route plugins under `/api`), `config.ts`, `db/` (pool,
 `withTransaction`, migration runner, user repos), `auth/` (`roles.ts`, `access.ts`), `plugins/auth.ts`
-(`requireAuth`, `requireRole`, `requireCapability`), `routes/`, domain folders (`signals/`, `billing/`, `rooms/`, `chat/`, `moderation/`),
+(`requireAuth`, `requireRole`, `requireCapability`), `routes/`, domain folders (`signals/`, `billing/`, `rooms/`, `chat/`, `moderation/`, `notifications/`),
 `errors.ts` (`AppError`, `badRequest`, `forbidden`, `notFound`, `conflict`), `lib/validate.ts` (`parse`).
 
 A new module = route plugin in `routes/` + registration in `app.ts` + SQL migration + web pages + tests.
 
 ## 3. Database and migrations
 - Plain SQL files in `apps/api/migrations`, applied in filename order, each in a transaction; **never edit an applied
-  migration**, add the next number (`NNN_name.sql`). Current: 001 init, 002 profiles+signals, 003 billing, 004 community rooms, 005 room messages, 006 community moderation.
+  migration**, add the next number (`NNN_name.sql`). Current: 001 init, 002 profiles+signals, 003 billing, 004 community rooms, 005 room messages, 006 community moderation, 007 notifications.
 - Conventions: `uuid` primary keys generated in application code (`randomUUID()`), `timestamptz` timestamps,
   `check` constraints for enums, money as integer minor units.
 - Keep SQL compatible with both PostgreSQL 13+ and `pg-mem` (tests): avoid regex or string-function (`length`, `char_length`) check constraints and partial indexes; enforce lengths in Zod.
@@ -116,3 +116,21 @@ End each task with exactly ONE professional one-line commit message and stop; do
 - Staff-facing pages: `/staff/moderation` (queue) and the restriction controls on `/admin`. Restriction UI is admin-only on screen
   and on the server. Success feedback is shown by the page (lists reload and remount their rows).
 - Out of scope until requested: notifications, appeals, automated filtering, bulk actions.
+
+### Notifications (Prompt 4D)
+- Tables (migration 007): `notifications` (`seq` cursor, `dedupe_key`, unique `(user_id, dedupe_key)`) and `announcements`.
+- **Business code never creates notifications.** It announces a domain event after commit (`app.events.emit(...)`, types in
+  `src/events.ts`; inside a transaction collect events and emit them after it returns, as `BillingService` does). Only
+  `notifications/handlers.ts` maps events to notifications, and wording lives in `notifications/templates.ts`.
+- Every handler must be idempotent: give each notification a dedupe key built from the real-world event, never from a timestamp of
+  "now" alone. Do not use `RETURNING` to detect a duplicate (pg-mem differs from PostgreSQL); use the pre-check + `23505` pattern or
+  count stored rows.
+- Notification text must contain only what a signal's public (locked) view shows. Never copy premium update text, entry, stops or
+  targets into a notification. Do not put internal reasons (admin reasons, provider failure codes) in user-facing text.
+- Premium audiences: ask `BillingService.entitlementsForUsers()` and apply `can()`. `subscriptionState()`/`buildEntitlement()` may
+  only be called from the billing layer (a test enforces it), so notifications go through `BillingService`.
+- Members reach notifications only through `/api/notifications`, always scoped to the session user's id. Never add a user-id parameter.
+- The expiry sweep (`sweepSubscriptions`) is the only background job and is justified by calendar-driven lapse. Keep it idempotent.
+- Preferences: `newSignals`, `signalUpdates`, `announcements` apply to signal and announcement notices only; payment, subscription
+  and moderation notices are always sent.
+- Out of scope until requested: notification UI, email/SMS/push, per-channel preferences, retention clean-up.

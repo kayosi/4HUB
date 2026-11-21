@@ -267,3 +267,13 @@ export const listSubscriptionsForUsers = async (db: Q, userIds: string[]) => {
 };
 export const getPaymentForInvoice = async (db: Q, paymentId: string) =>
   (await db.query<PaymentRow>('select * from payments where id = $1', [paymentId])).rows[0];
+
+/** Subscriptions that could still grant access at or after `since` (a superset: callers apply the real rule). */
+export const listPossiblyEntitledSubscriptions = async (db: Q, since: Date) =>
+  (await db.query<SubscriptionRow>('select * from subscriptions where revoked_at is null and current_period_end > $1', [since])).rows;
+
+/** Subscriptions whose paid period ends within (from, to], with their plan name. Used for expiry reminders. */
+export const listSubscriptionsEndingBetween = async (db: Q, from: Date, to: Date) =>
+  (await db.query<SubscriptionRow & { plan_name: string }>(
+    `select s.*, p.name as plan_name from subscriptions s join plans p on p.id = s.plan_id
+      where s.revoked_at is null and s.current_period_end > $1 and s.current_period_end <= $2`, [from, to])).rows;

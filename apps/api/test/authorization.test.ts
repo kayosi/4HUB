@@ -7,7 +7,10 @@ const matrix: Record<string, Role[]> = {
   '/api/member/premium': ['premium', 'moderator', 'admin'],
   '/api/moderation/overview': ['moderator', 'admin'],
   '/api/moderation/reports': ['moderator', 'admin'],
+  '/api/notifications': ['free', 'premium', 'moderator', 'admin'],
+  '/api/notifications/unread-count': ['free', 'premium', 'moderator', 'admin'],
   '/api/admin/overview': ['admin'],
+  '/api/admin/announcements': ['admin'],
   '/api/admin/users': ['admin'],
 };
 

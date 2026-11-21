@@ -106,6 +106,7 @@ export const moderationQueueRoutes: FastifyPluginAsync = async (app) => {
       });
       return r;
     });
+    await app.events.emit('moderation.report_closed', { reportId: closed.id, outcome: status });
     return { report: await itemFor((await getReportView(db, closed.id))!) };
   };
   app.post('/reports/:id/resolve', close('resolved'));
@@ -141,6 +142,7 @@ export const moderationQueueRoutes: FastifyPluginAsync = async (app) => {
     });
     const updated = (await getMessage(db, msg.id))!;
     publish('message.updated', updated);
+    await app.events.emit('moderation.message_hidden', { messageId: msg.id, authorId: msg.author_id, roomId: msg.room_id, reason, reportIds: closedReports, at: updated.hidden_at ?? app.now() });
     return { message: serializeMessage(updated, actor), resolvedReports: closedReports.length };
   });
 
@@ -154,6 +156,7 @@ export const moderationQueueRoutes: FastifyPluginAsync = async (app) => {
     });
     const updated = (await getMessage(db, msg.id))!;
     publish('message.updated', updated);
+    await app.events.emit('moderation.message_unhidden', { messageId: msg.id, authorId: msg.author_id, roomId: msg.room_id, at: app.now() });
     return { message: serializeMessage(updated, actor) };
   });
 
@@ -174,6 +177,7 @@ export const moderationQueueRoutes: FastifyPluginAsync = async (app) => {
     });
     const updated = (await getMessage(db, msg.id))!;
     publish('message.deleted', updated);
+    await app.events.emit('moderation.message_removed', { messageId: msg.id, authorId: msg.author_id, roomId: msg.room_id, reason, reportIds: closedReports, at: app.now() });
     return { message: serializeMessage(updated, actor), resolvedReports: closedReports.length };
   });
 };
@@ -214,6 +218,7 @@ export const adminRestrictionRoutes: FastifyPluginAsync = async (app) => {
       });
       return created;
     });
+    await app.events.emit('moderation.restricted', { restrictionId: r.id, userId: id, type: input.type, reason: input.reason, expiresAt });
     return reply.code(201).send({ restriction: restrictionView(r, now) });
   });
 
@@ -233,6 +238,7 @@ export const adminRestrictionRoutes: FastifyPluginAsync = async (app) => {
       });
       return r;
     });
+    await app.events.emit('moderation.restriction_lifted', { restrictionId: lifted.id, userId: lifted.user_id, type: lifted.type });
     return { restriction: restrictionView(lifted, now) };
   });
 };

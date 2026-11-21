@@ -143,6 +143,38 @@ messaging, not a second system: it reuses the room access check, the role model,
   `user.restriction_lifted`. Hide/remove entries keep a snapshot of the content, because the chat copy is wiped on removal.
 - **Not yet built:** notifications (people learn of actions when they next use the app), appeals, automatic moderation.
 
+### Notifications (Prompt 4D, backend only)
+In-app notifications (`notifications`, `announcements`; migration 007). There is no email, SMS or push, and no UI yet: this is the
+storage, creation and retrieval layer other channels and the UI will sit on.
+- **Decoupled by design:** business code never creates notifications. Signals, billing and moderation announce plain **domain
+  events** after their change is committed (`src/events.ts`), and `notifications/handlers.ts` is the only file that turns events into
+  notifications. A failing listener is logged and never fails the payment, signal or moderation action that raised it.
+- **What is notified:** new signals; signal updates and closures; subscription activated / renewed / granted / revoked; payment
+  succeeded / failed / refunded; subscription ending soon, in grace, and expired; moderation outcomes (your message hidden, removed
+  or restored, your account muted/suspended/restored, and "your report was reviewed" to reporters); and admin announcements.
+  Mentions and replies do not exist in the community yet, so they are not notified.
+- **Who gets what:** signal notices go to members who opted in (`notification_prefs`), excluding the author. Updates and closures of
+  *premium* signals go only to people who can currently view them (the central `can()` over the real entitlement). Payment,
+  subscription and moderation notices are always sent. Announcements respect the "announcements" preference (off by default)
+  unless marked `important`.
+- **Never leaks premium content:** a notification may only contain what a signal's public (locked) view already shows. Premium update
+  text, entry, stops and targets are never copied into one, because a notification can outlive a subscription.
+- **No duplicates:** every notification has a `dedupe_key` built from the real-world event (for example `payment:<id>:succeeded`,
+  `signal:<id>:update:<updateId>`), with a unique `(user_id, dedupe_key)` constraint. Replaying an event, redelivering a webhook or
+  racing two requests creates at most one row. Fan-outs are chunked and re-runnable.
+- **API (`/api/notifications`, signed-in members, own notifications only; no user id is ever accepted):** `GET /` (newest first,
+  `limit`, `before` cursor from `nextBefore`, `category`, `unread=true`; includes unread counts), `GET /unread-count`,
+  `POST /:id/read` (idempotent; another user's id is a 404), `POST /read-all` (optional `category`).
+  Admin: `POST /api/admin/announcements` (with an optional idempotency `clientId`), `GET /api/admin/announcements`,
+  `POST /api/admin/notifications/sweep`.
+- **Time-driven notices (the one background job):** subscriptions lapse by the calendar, so nothing happens at that moment for an
+  event to hang on. `NotificationService.sweepSubscriptions()` finds subscriptions near the end of their period, in grace, or just
+  expired, and is idempotent. A plain in-process timer runs it every `NOTIFICATION_SWEEP_MS` (default 15 min, `0` = off, started in
+  `index.ts`); the admin endpoint lets an external scheduler do it instead. No queue or worker is involved.
+- **Limits:** events are announced in-process after commit, so a crash in that instant can lose a notification (replays are safe).
+  Fan-out to very large audiences happens inside the request; at that scale move it to a worker or outbox (only `events.ts` changes).
+  There is no retention or clean-up of old notifications yet.
+
 ## Security model
 - Sessions: random 256-bit token in an `httpOnly`, `SameSite=Lax` (`Secure` in production) cookie; only its SHA-256 hash is stored.
 - Authorization is enforced **server-side** (`requireRole`); frontend guards are UX only.

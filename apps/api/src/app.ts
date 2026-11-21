@@ -26,6 +26,10 @@ import adminBillingRoutes from './routes/adminBilling.js';
 import roomRoutes, { staffRoomRoutes } from './routes/rooms.js';
 import messageRoutes from './routes/messages.js';
 import { adminRestrictionRoutes, moderationQueueRoutes } from './routes/moderation.js';
+import notificationRoutes, { adminNotificationRoutes } from './routes/notifications.js';
+import { EventBus } from './events.js';
+import { NotificationService } from './notifications/service.js';
+import { registerNotificationHandlers } from './notifications/handlers.js';
 import { ChatHub } from './chat/hub.js';
 import { WriteLimiter } from './chat/limiter.js';
 import './types.js';
@@ -58,9 +62,18 @@ export async function buildApp({ config, db, mailer, storage, clock, providers, 
   const now = clock ?? (() => new Date());
   app.decorate('now', now);
   const registry = providers ?? createRegistry(config, (http ?? (fetch as unknown as FetchLike)), now);
-  app.decorate('billing', new BillingService(db, registry, {
+  // Business code announces what happened; notifications (and anything else later) listen. See events.ts.
+  const events = new EventBus(app.log);
+  app.decorate('events', events);
+  const billing = new BillingService(db, registry, {
     graceDays: config.SUBSCRIPTION_GRACE_DAYS, webPublicUrl: config.WEB_PUBLIC_URL, apiPublicUrl: config.API_PUBLIC_URL,
-  }, now, app.log));
+  }, now, app.log, events);
+  app.decorate('billing', billing);
+  const notifications = new NotificationService(db, billing, now, {
+    graceDays: config.SUBSCRIPTION_GRACE_DAYS, expiryNoticeDays: config.NOTIFICATION_EXPIRY_NOTICE_DAYS,
+  }, app.log);
+  app.decorate('notifications', notifications);
+  registerNotificationHandlers(events, notifications, db);
   app.decorate('storage', storage ?? new LocalDiskStorage(config.UPLOAD_DIR));
   app.decorate('chatHub', new ChatHub());
   app.decorate('chatLimiter', new WriteLimiter(config.CHAT_WRITES_PER_MINUTE, 60_000, now));
@@ -124,6 +137,8 @@ export async function buildApp({ config, db, mailer, storage, clock, providers, 
       await api.register(staffRoomRoutes, { prefix: '/staff/rooms' });
       await api.register(moderationQueueRoutes, { prefix: '/moderation' });
       await api.register(adminRestrictionRoutes, { prefix: '/admin' });
+      await api.register(notificationRoutes, { prefix: '/notifications' });
+      await api.register(adminNotificationRoutes, { prefix: '/admin' });
       // Future modules (bots, copy-trading, chat) register here as new route plugins.
     },
     { prefix: '/api' },

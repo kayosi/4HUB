@@ -24,7 +24,7 @@ describe('migration 003: premium role -> subscription', () => {
       await db.query(`insert into users (id, email, password_hash, display_name, role) values ($1,$2,'x','U',$3)`, [id, email, role]);
     }
 
-    expect(await migrate(db)).toEqual(['003_billing.sql', '004_community_rooms.sql', '005_room_messages.sql', '006_community_moderation.sql']); // now apply billing on top of existing data
+    expect(await migrate(db)).toEqual(['003_billing.sql', '004_community_rooms.sql', '005_room_messages.sql', '006_community_moderation.sql', '007_notifications.sql']); // now apply billing on top of existing data
 
     const users = Object.fromEntries((await db.query('select id, role from users')).rows.map((r) => [r.id, r.role]));
     expect(users).toEqual({ [ids.prem]: 'free', [ids.free]: 'free', [ids.admin]: 'admin' });

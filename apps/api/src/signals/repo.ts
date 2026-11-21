@@ -115,11 +115,13 @@ export async function updateSignal(db: Q, id: string, patch: Record<string, unkn
 export async function addUpdate(
   db: Q,
   u: { signalId: string; authorId: string; kind: UpdateKind; message: string; changes?: object },
-): Promise<void> {
+): Promise<string> {
+  const id = randomUUID();
   await db.query(
     'insert into signal_updates (id, signal_id, author_id, kind, message, changes) values ($1,$2,$3,$4,$5,$6)',
-    [randomUUID(), u.signalId, u.authorId, u.kind, u.message, JSON.stringify(u.changes ?? {})],
+    [id, u.signalId, u.authorId, u.kind, u.message, JSON.stringify(u.changes ?? {})],
   );
+  return id;
 }
 
 export async function listUpdates(db: Q, signalId: string): Promise<UpdateRow[]> {

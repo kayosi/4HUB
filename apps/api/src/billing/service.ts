@@ -6,7 +6,8 @@ import { AppError, badRequest, conflict, notFound } from '../errors.js';
 import type { AuthUser } from '../auth/access.js';
 import * as repo from './repo.js';
 import type { PaymentRow, PlanRow, SubscriptionRow } from './repo.js';
-import { addDays, buildEntitlement, subscriptionState, type Entitlement } from './subscriptions.js';
+import { addDays, buildEntitlement, FREE_ENTITLEMENT, subscriptionState, type Entitlement, type SubscriptionState } from './subscriptions.js';
+import { EventBus, type PendingEvent } from '../events.js';
 import type { ProviderRegistry } from './providers/registry.js';
 import {
   InvalidWebhookError, ProviderError,
@@ -38,11 +39,37 @@ export class BillingService {
     private readonly opts: BillingOptions,
     private readonly now: () => Date,
     private readonly log: FastifyBaseLogger,
+    /** Announces what happened (after it is committed). Billing neither knows nor cares who listens. */
+    private readonly events: EventBus = new EventBus(),
   ) {}
 
   // ------------------------------------------------------------------ entitlement (used on every authenticated request)
   async entitlementFor(userId: string): Promise<Entitlement> {
     return buildEntitlement(await repo.listSubscriptionsForUser(this.db, userId), this.now(), this.opts.graceDays);
+  }
+
+  /** Entitlements for many members at once (e.g. to decide who may see a premium signal), using the same rule as every request. */
+  async entitlementsForUsers(userIds: string[]): Promise<Map<string, Entitlement>> {
+    const now = this.now();
+    const byUser = new Map<string, SubscriptionRow[]>();
+    for (const sub of await repo.listPossiblyEntitledSubscriptions(this.db, addDays(now, -this.opts.graceDays))) {
+      byUser.set(sub.user_id, [...(byUser.get(sub.user_id) ?? []), sub]);
+    }
+    return new Map(userIds.map((id) => {
+      const subs = byUser.get(id);
+      return [id, subs ? buildEntitlement(subs, now, this.opts.graceDays) : FREE_ENTITLEMENT];
+    }));
+  }
+
+  /** Subscriptions whose period ends in (from, to], each with its current state. Drives expiry/grace/expired notices. */
+  async lifecycleSubscriptions(from: Date, to: Date): Promise<{
+    subscriptionId: string; userId: string; tier: string; planName: string; end: Date; cancelAtPeriodEnd: boolean; state: SubscriptionState;
+  }[]> {
+    const now = this.now();
+    return (await repo.listSubscriptionsEndingBetween(this.db, from, to)).map((s) => ({
+      subscriptionId: s.id, userId: s.user_id, tier: s.tier, planName: s.plan_name, end: s.current_period_end,
+      cancelAtPeriodEnd: s.cancel_at_period_end, state: subscriptionState(s, now, this.opts.graceDays),
+    }));
   }
 
   // ------------------------------------------------------------------ checkout
@@ -148,7 +175,8 @@ export class BillingService {
       }
     }
 
-    return withTransaction(this.db, async (tx) => {
+    const pending: PendingEvent[] = [];
+    const outcome = await withTransaction(this.db, async (tx) => {
       let eventRowId = await repo.insertEvent(tx, {
         provider: provider.id, eventId: event.eventId, type: event.type, reference: event.providerReference,
         paymentId: payment?.id ?? null, outcome: 'received',
@@ -158,13 +186,16 @@ export class BillingService {
         if (!existing || !RETRYABLE.has(existing.outcome)) return 'duplicate';
         eventRowId = existing.id;
       }
-      const outcome: WebhookOutcome = payment ? await this.applyEvent(tx, provider, payment.id, event, verified) : 'unmatched';
+      const outcome: WebhookOutcome = payment ? await this.applyEvent(tx, provider, payment.id, event, verified, pending) : 'unmatched';
       await repo.setEventOutcome(tx, eventRowId, outcome, payment?.id ?? null);
       return outcome;
     });
+    // Only now that the change is committed. A rolled-back transaction announces nothing.
+    await this.events.emitAll(pending);
+    return outcome;
   }
 
-  private async applyEvent(tx: Tx, provider: PaymentProvider, paymentId: string, event: WebhookEvent, verified: ProviderPaymentStatus | null): Promise<WebhookOutcome> {
+  private async applyEvent(tx: Tx, provider: PaymentProvider, paymentId: string, event: WebhookEvent, verified: ProviderPaymentStatus | null, pending: PendingEvent[]): Promise<WebhookOutcome> {
     const p = (await repo.getPayment(tx, paymentId))!; // re-read inside the transaction: current state decides
     const at = this.now();
 
@@ -180,6 +211,7 @@ export class BillingService {
       if (!consistent) {
         await repo.transitionPayment(tx, p.id, { from: ['pending'], to: 'failed', failureReason: 'amount_mismatch' });
         await repo.audit(tx, { action: 'payment.amount_mismatch', entityType: 'payment', entityId: p.id, data: { expected: { amountMinor: p.amount_minor, currency: p.currency }, event: { amountMinor: event.amountMinor, currency: event.currency }, verified: { amountMinor: verified.amountMinor, currency: verified.currency } } });
+        pending.push({ type: 'payment.failed', payload: { paymentId: p.id, userId: p.user_id, amountMinor: p.amount_minor, currency: p.currency, planName: p.plan_snapshot.name, reason: 'amount_mismatch' } });
         return 'rejected_mismatch';
       }
       const updated = await repo.transitionPayment(tx, p.id, {
@@ -187,7 +219,9 @@ export class BillingService {
         providerTransactionId: event.providerTransactionId ?? verified.providerTransactionId ?? null,
       });
       if (!updated) return 'ignored';
-      await this.grantFromPayment(tx, updated);
+      // Announced in this order so members see "payment received" before "subscription activated".
+      pending.push({ type: 'payment.succeeded', payload: { paymentId: p.id, userId: p.user_id, amountMinor: p.amount_minor, currency: p.currency, planName: p.plan_snapshot.name } });
+      await this.grantFromPayment(tx, updated, pending);
       await repo.audit(tx, { action: 'payment.succeeded', entityType: 'payment', entityId: p.id, data: { eventId: event.eventId } });
       return 'applied';
     }
@@ -200,11 +234,12 @@ export class BillingService {
       const sub = await repo.getSubscription(tx, p.user_id, p.plan_snapshot.tier);
       if (sub) await repo.updateSubscription(tx, sub.id, { lastFailedPaymentAt: at });
       await repo.audit(tx, { action: `payment.${to}`, entityType: 'payment', entityId: p.id, data: { eventId: event.eventId, reason: event.failureReason ?? null } });
+      if (to === 'failed') pending.push({ type: 'payment.failed', payload: { paymentId: p.id, userId: p.user_id, amountMinor: p.amount_minor, currency: p.currency, planName: p.plan_snapshot.name, reason: event.failureReason ?? null } });
       return 'applied';
     }
 
     // payment.refunded
-    const done = await this.recordRefund(tx, p, event.refundAmountMinor ?? p.amount_minor, { actorId: null, source: 'provider', reason: event.eventId });
+    const done = await this.recordRefund(tx, p, event.refundAmountMinor ?? p.amount_minor, { actorId: null, source: 'provider', reason: event.eventId }, pending);
     return done ? 'applied' : 'ignored';
   }
 
@@ -240,7 +275,7 @@ export class BillingService {
 
   // ------------------------------------------------------------------ granting access
   /** Turns ONE verified payment into subscription time. The unique payment_id on the period ledger makes this once-only. */
-  private async grantFromPayment(tx: Tx, payment: PaymentRow): Promise<void> {
+  private async grantFromPayment(tx: Tx, payment: PaymentRow, pending: PendingEvent[]): Promise<void> {
     const snap = payment.plan_snapshot;
     const now = this.now();
     const sub = await repo.getSubscription(tx, payment.user_id, snap.tier);
@@ -265,10 +300,11 @@ export class BillingService {
       description: `${snap.name}: ${fmtDate(base)} to ${fmtDate(end)}`, start: base, end, issuedAt: now,
     });
     await repo.audit(tx, { action: `subscription.${kind}`, entityType: 'subscription', entityId: subscriptionId, data: { paymentId: payment.id, tier: snap.tier, from: base.toISOString(), until: end.toISOString() } });
+    pending.push({ type: 'subscription.started', payload: { subscriptionId, userId: payment.user_id, tier: snap.tier, planName: snap.name, kind, until: end, paymentId: payment.id } });
   }
 
   // ------------------------------------------------------------------ refunds
-  private async recordRefund(tx: Tx, payment: PaymentRow, amountMinor: number, who: { actorId: string | null; source: string; reason: string }): Promise<boolean> {
+  private async recordRefund(tx: Tx, payment: PaymentRow, amountMinor: number, who: { actorId: string | null; source: string; reason: string }, pending: PendingEvent[]): Promise<boolean> {
     if (payment.status !== 'succeeded' && payment.status !== 'partially_refunded') return false;
     const total = Math.min(payment.amount_minor, payment.refunded_minor + Math.max(0, amountMinor));
     if (total <= payment.refunded_minor) return false;
@@ -279,6 +315,7 @@ export class BillingService {
     await repo.setInvoiceStatus(tx, payment.id, full ? 'refunded' : 'partially_refunded');
     if (full) await this.reversePeriod(tx, updated, at);
     await repo.audit(tx, { actorId: who.actorId, action: 'payment.refunded', entityType: 'payment', entityId: payment.id, data: { amountMinor, totalRefundedMinor: total, full, source: who.source, reason: who.reason } });
+    pending.push({ type: 'payment.refunded', payload: { paymentId: payment.id, userId: payment.user_id, amountMinor: total - payment.refunded_minor, totalRefundedMinor: total, currency: payment.currency, planName: payment.plan_snapshot.name, full } });
     return true;
   }
 
@@ -294,13 +331,16 @@ export class BillingService {
 
   /** Admin records a refund that was issued outside 4HUB (e.g. an M-Pesa reversal). No provider call is made. */
   async recordManualRefund(adminId: string, paymentId: string, amountMinor: number | undefined, reason: string): Promise<PaymentRow> {
-    return withTransaction(this.db, async (tx) => {
+    const pending: PendingEvent[] = [];
+    const result = await withTransaction(this.db, async (tx) => {
       const p = await repo.getPayment(tx, paymentId);
       if (!p) throw notFound('Payment not found');
-      const ok = await this.recordRefund(tx, p, amountMinor ?? p.amount_minor - p.refunded_minor, { actorId: adminId, source: 'admin', reason });
+      const ok = await this.recordRefund(tx, p, amountMinor ?? p.amount_minor - p.refunded_minor, { actorId: adminId, source: 'admin', reason }, pending);
       if (!ok) throw conflict('This payment cannot be refunded (not paid, or already fully refunded)');
       return (await repo.getPayment(tx, paymentId))!;
     });
+    await this.events.emitAll(pending);
+    return result;
   }
 
   // ------------------------------------------------------------------ subscription lifecycle
@@ -343,7 +383,8 @@ export class BillingService {
     if (!plan || plan.tier === 'free' || !isTier(plan.tier)) throw badRequest('Choose a paid plan to grant');
     const length = days ?? plan.duration_days;
     if (!length) throw badRequest('This plan has no duration; specify days');
-    return withTransaction(this.db, async (tx) => {
+    const pending: PendingEvent[] = [];
+    const granted = await withTransaction(this.db, async (tx) => {
       const now = this.now();
       const sub = await repo.getSubscription(tx, userId, plan.tier);
       const st = sub ? subscriptionState(sub, now, this.opts.graceDays) : null;
@@ -357,14 +398,19 @@ export class BillingService {
       }))!;
       await repo.insertPeriod(tx, { subscriptionId: result.id, paymentId: null, planId: plan.id, kind: 'grant', start: base, end });
       await repo.audit(tx, { actorId: adminId, action: 'subscription.granted', entityType: 'subscription', entityId: result.id, data: { userId, plan: plan.code, days: length, reason, until: end.toISOString() } });
+      pending.push({ type: 'subscription.started', payload: { subscriptionId: result.id, userId, tier: plan.tier, planName: plan.name, kind: 'grant', until: end, paymentId: null } });
       return result;
     });
+    await this.events.emitAll(pending);
+    return granted;
   }
 
   /** Ends access immediately (abuse, chargeback, mistaken grant). */
   async revoke(adminId: string, userId: string, tier: string, reason: string): Promise<void> {
     const sub = await this.ownSubscription(userId, tier);
-    await repo.updateSubscription(this.db, sub.id, { revokedAt: this.now() });
+    const at = this.now();
+    await repo.updateSubscription(this.db, sub.id, { revokedAt: at });
     await repo.audit(this.db, { actorId: adminId, action: 'subscription.revoked', entityType: 'subscription', entityId: sub.id, data: { userId, reason } });
+    await this.events.emit('subscription.revoked', { subscriptionId: sub.id, userId, tier, at });
   }
 }

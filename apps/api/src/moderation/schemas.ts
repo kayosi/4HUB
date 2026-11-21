@@ -4,7 +4,7 @@ import { sanitizeMessageBody } from '../chat/sanitize.js';
 import { REPORT_REASONS, RESTRICTION_TYPES } from './model.js';
 
 /** Trimmed, control-character-free, invisible-character-stripped text within [min, max] characters (code points). */
-const text = (min: number, max: number, multiline = false) =>
+export const text = (min: number, max: number, multiline = false) =>
   z
     .string()
     .max(max * 4, 'Too long')

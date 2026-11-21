@@ -28,6 +28,9 @@ const schema = z
   MPESA_CALLBACK_TOKEN: z.string().min(16).optional(),
   PAYSTACK_SECRET_KEY: z.string().optional(),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+  /** Notifications: how often the subscription expiry sweep runs (milliseconds; 0 turns the timer off), and how early the reminder goes out. */
+  NOTIFICATION_SWEEP_MS: z.coerce.number().int().min(0).default(900_000),
+  NOTIFICATION_EXPIRY_NOTICE_DAYS: z.coerce.number().int().min(1).max(30).default(3),
   /** Message reports per person: a burst limit and a daily cap, so reporting cannot be used to harass or flood the queue. */
   REPORTS_PER_HOUR: z.coerce.number().int().positive().default(10),
   REPORTS_PER_DAY: z.coerce.number().int().positive().default(30),

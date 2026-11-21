@@ -165,3 +165,10 @@ export async function liftRestriction(db: Q, id: string, actorId: string, note: 
     [id, now, actorId, note],
   )).rows[0];
 }
+
+/** Who filed each of these reports (used to tell reporters their report was reviewed). */
+export async function reporterIdsFor(db: Q, reportIds: string[]): Promise<{ id: string; reporter_id: string }[]> {
+  if (reportIds.length === 0) return [];
+  return (await db.query<{ id: string; reporter_id: string }>(
+    `select id, reporter_id from message_reports where id in (${reportIds.map((_, i) => `$${i + 1}`).join(', ')})`, reportIds)).rows;
+}
